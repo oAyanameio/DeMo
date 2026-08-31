@@ -1,0 +1,1 @@
+sdd_missing_random_block2 best_epoch= 46 val_minFDE20=13.2268  N= 2829  test_minADE20=  8.4247  test_minFDE20= 14.3160
