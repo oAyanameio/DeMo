@@ -30,7 +30,12 @@ class SddMissingDataset(Dataset):
         pred_len: int = 12,
     ) -> None:
         super().__init__()
-        assert condition in ("complete", "random_single", "random_block2"), condition
+        # v1 + v2_high 全部条件（数据格式相同，仅掩码不同；v2 高缺失数据
+        # 位于 data/SDD_missing_v2_high/<condition>/，data_root 指过去即可）
+        _KNOWN = ("complete", "random_single", "random_block2",
+                  "random_fixed3", "random_fixed4", "random_fixed5",
+                  "random_block3", "random_block4", "random_block6")
+        assert condition in _KNOWN, condition
         assert split in ("train", "val", "test"), split
         self.data_root = Path(data_root)
         self.condition = condition

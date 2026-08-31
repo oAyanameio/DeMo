@@ -1,9 +1,11 @@
-"""SDD missing-history v1：训练 + held-out test 评测（单 condition）。
+"""SDD missing-history（v1 / v2_high）：训练 + held-out test 评测（单 condition）。
 
 用法:
-    CUDA_VISIBLE_DEVICES=<gpu> python scripts/训练与评估/run_sdd_missing.py <condition> [epochs]
+    CUDA_VISIBLE_DEVICES=<gpu> python scripts/训练与评估/run_sdd_missing.py <condition> [epochs] [data_root]
 
-condition ∈ {complete, random_single, random_block2}
+condition ∈ {complete, random_single, random_block2,
+             random_fixed3/4/5, random_block3/4/6}
+data_root 缺省 data/SDD_missing_v1；v2 高缺失条件传 data/SDD_missing_v2_high。
 流程与 scripts/训练与评估/run_sdd.py 相同：train（monitor=val_minFDE20, save_top_k=3）→
 best epoch → eval test=true 重算 test_minADE20/test_minFDE20。
 结果追加到 outputs/sdd_missing_<condition>_summary.txt。
@@ -17,7 +19,9 @@ from pathlib import Path
 
 D = Path("/home/lbh/DeMo")
 PY = f"{Path.home()}/.conda/envs/DeMo/bin/python"
-CONDITIONS = ["complete", "random_single", "random_block2"]
+CONDITIONS = ["complete", "random_single", "random_block2",
+              "random_fixed3", "random_fixed4", "random_fixed5",
+              "random_block3", "random_block4", "random_block6"]
 CFG = "config_sdd_missing"
 
 
@@ -38,15 +42,17 @@ def find_best_epoch(run_dir: Path):
 def main():
     cond = sys.argv[1]
     epochs = sys.argv[2] if len(sys.argv) > 2 else "100"
+    data_root = sys.argv[3] if len(sys.argv) > 3 else str(D / "data" / "SDD_missing_v1")
     assert cond in CONDITIONS, f"bad condition: {cond}"
     out_name = f"sdd_missing_{cond}"
     env = dict(os.environ)
 
     # 1. train
-    print(f"===== TRAIN {CFG} condition={cond} (epochs={epochs}) =====", flush=True)
+    print(f"===== TRAIN {CFG} condition={cond} data_root={data_root} (epochs={epochs}) =====", flush=True)
     p = subprocess.run(
         [PY, "-u", "train.py", f"--config-name={CFG}",
-         f"datamodule.target.condition={cond}", f"epochs={epochs}", f"output={out_name}"],
+         f"datamodule.target.condition={cond}", f"datamodule.target.data_root={data_root}",
+         f"epochs={epochs}", f"output={out_name}"],
         cwd=D,
         env=env,
     )
@@ -71,7 +77,8 @@ def main():
     link.symlink_to(ck)
     out = subprocess.run(
         [PY, "-u", "eval.py", f"--config-name={CFG}",
-         f"datamodule.target.condition={cond}", "gpus=1", "test=true",
+         f"datamodule.target.condition={cond}", f"datamodule.target.data_root={data_root}",
+         "gpus=1", "test=true",
          f"checkpoint={link}"],
         cwd=D,
         env=env,

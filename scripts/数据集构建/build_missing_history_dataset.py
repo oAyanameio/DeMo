@@ -13,13 +13,23 @@
   5. SDD train/val 划分严格复刻 moflow_sdd_dataset.py（default_rng(2024) 置换）；
   6. 缺失历史坐标写 0.0，valid_mask[:, :8] = history_mask，valid_mask[:, 8:] 全 True。
 
-用法：
+用法：v1（历史，掩码生成路径与现在完全兼容）：
   python3 scripts/数据集构建/build_missing_history_dataset.py --dataset ethucy \
       --source-root data/ETHUCY_benchmark_v1 --output-root data/ETHUCY_missing_v1 \
       --conditions complete random_single random_block2 --mask-seed 42
   python3 scripts/数据集构建/build_missing_history_dataset.py --dataset sdd \
       --source-root data/sdd --output-root data/SDD_missing_v1 \
       --conditions complete random_single random_block2 --split-seed 2024 --mask-seed 42
+
+v2 高缺失（missing_history_v2_high，docs/research/ETHUCY与SDD第二轮高缺失历史实验方案.md）：
+  python3 scripts/数据集构建/build_missing_history_dataset.py --dataset ethucy \
+      --source-root data/ETHUCY_benchmark_v1 --output-root data/ETHUCY_missing_v2_high \
+      --conditions random_fixed3 random_fixed4 random_block3 random_block4 random_block6 \
+      --mask-seed 42 --version missing_history_v2_high
+  python3 scripts/数据集构建/build_missing_history_dataset.py --dataset sdd \
+      --source-root data/sdd --output-root data/SDD_missing_v2_high \
+      --conditions random_fixed3 random_fixed4 random_block3 random_block4 random_block6 \
+      --split-seed 2024 --mask-seed 42 --version missing_history_v2_high
 """
 
 import argparse
@@ -43,7 +53,23 @@ FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 SPLITS = ["train", "val", "test"]
 # 可缺失帧范围：第 0-5 帧（第 6、7 帧强制可见）
 MISSABLE = list(range(6))
-CONDITIONS = ["complete", "random_single", "random_block2"]
+CONDITIONS = [
+    "complete", "random_single", "random_block2",                    # v1
+    "random_fixed3", "random_fixed4", "random_fixed5",               # v2_high 随机缺失
+    "random_block3", "random_block4", "random_block6",               # v2_high 连续缺失
+]
+# 每个条件的名义缺失帧数 / 缺失率 / 掩码规则（写入 manifest，方案 §2.2 / §7.3）
+CONDITION_SPECS = {
+    "complete":      {"missing_frames": 0, "nominal_rate": 0.0,   "rule": "all_visible"},
+    "random_single": {"missing_frames": 1, "nominal_rate": 0.125, "rule": "random_1_distinct_of_0-5"},
+    "random_block2": {"missing_frames": 2, "nominal_rate": 0.25,  "rule": "contiguous_block2_start_0-4"},
+    "random_fixed3": {"missing_frames": 3, "nominal_rate": 0.375, "rule": "random_3_distinct_of_0-5"},
+    "random_fixed4": {"missing_frames": 4, "nominal_rate": 0.5,   "rule": "random_4_distinct_of_0-5"},
+    "random_fixed5": {"missing_frames": 5, "nominal_rate": 0.625, "rule": "random_5_distinct_of_0-5"},
+    "random_block3": {"missing_frames": 3, "nominal_rate": 0.375, "rule": "contiguous_block3_start_0-3"},
+    "random_block4": {"missing_frames": 4, "nominal_rate": 0.5,   "rule": "contiguous_block4_start_0-2"},
+    "random_block6": {"missing_frames": 6, "nominal_rate": 0.75,  "rule": "fixed_block_0-5"},
+}
 
 
 def mask_seed_from(key: str) -> int:
@@ -67,6 +93,9 @@ def derive_history_mask(
 
     身份键含 source_file：同一 (fold,split,scene) 的不同源 .txt 样本即使
     sample_index 相同也获得独立掩码（防跨源掩码碰撞）。
+
+    v1 条件（complete/random_single/random_block2）的采样代码路径保持逐字节
+    不变（相同的 rng 调用序列），v1 数据集重跑可精确复现。
     """
     if condition == "complete":
         return torch.ones(num_agents, OBS_LEN, dtype=torch.bool)
@@ -87,6 +116,22 @@ def derive_history_mask(
             s = int(rng.integers(0, len(MISSABLE) - 1))
             mask[a, s] = False
             mask[a, s + 1] = False
+    elif condition in ("random_fixed3", "random_fixed4", "random_fixed5"):
+        # v2：从候选帧 0-5 中无放回抽 k 个不同帧（方案 §3.1）
+        k = int(condition[-1])
+        for a in range(num_agents):
+            ts = rng.choice(len(MISSABLE), size=k, replace=False)
+            for t in ts:
+                mask[a, int(t)] = False
+    elif condition in ("random_block3", "random_block4"):
+        # v2：连续 m 帧，起点 s ∈ [0, 6-m]（block3: s∈0-3, block4: s∈0-2）
+        m = int(condition[-1])
+        for a in range(num_agents):
+            s = int(rng.integers(0, len(MISSABLE) - m + 1))
+            mask[a, s:s + m] = False
+    elif condition == "random_block6":
+        # v2：唯一合法块 {0,...,5}，无需随机（方案 §3.1）；condition/seed 仍保留在元数据
+        mask[:, :6] = False
     else:
         raise ValueError(f"unknown condition: {condition}")
     # 强制第 6、7 帧可见（双保险）
@@ -113,8 +158,12 @@ def apply_mask_to_sample(sample: dict, history_mask: torch.Tensor) -> dict:
 # ETH/UCY
 # ---------------------------------------------------------------------------
 
-def list_ethucy_units(source_root: Path):
-    """枚举 (fold, split, scene, files) 工作单元，顺序固定。"""
+def list_ethucy_units(source_root: Path, scenes=None):
+    """枚举 (fold, split, scene, files) 工作单元，顺序固定。
+
+    scenes 非 None 时只保留这些 scene 名（冒烟测试用；修复历史 no-op：
+    之前 --scenes 声明了但从未传入此处）。
+    """
     units = []
     for fold in FOLDS:
         for split in SPLITS:
@@ -123,6 +172,8 @@ def list_ethucy_units(source_root: Path):
                 continue
             for scene_dir in sorted(split_dir.iterdir()):
                 if not scene_dir.is_dir():
+                    continue
+                if scenes is not None and scene_dir.name not in scenes:
                     continue
                 files = sorted(scene_dir.glob("*.pt"))
                 if files:
@@ -188,8 +239,8 @@ def build_ethucy_unit(args):
     return (condition, fold, split, scene), stats
 
 
-def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, workers):
-    units = list_ethucy_units(source_root)
+def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, workers, version="missing_history_v1", scenes=None):
+    units = list_ethucy_units(source_root, scenes=scenes)
     total_src = sum(len(u[3]) for u in units)
     print(f"[ethucy] source units={len(units)} files={total_src}", flush=True)
 
@@ -227,7 +278,7 @@ def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, wo
                 print(f"[ethucy] {done}/{len(tasks)} units, {rate:.1f} units/s", flush=True)
 
     manifest = {
-        "version": "missing_history_v1",
+        "version": version,
         "dataset": "ETHUCY",
         "obs_len": OBS_LEN,
         "pred_len": PRED_LEN,
@@ -237,11 +288,13 @@ def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, wo
         "mask_seed": mask_seed,
         "split_seed": None,
         "conditions": conditions,
+        "condition_specs": {c: CONDITION_SPECS[c] for c in conditions},
         "history_visibility_rule": "frames_6_and_7_visible",
         "future_policy": "complete",
         "coordinate_policy": "raw_scene_coordinates",
         "feature_policy": "recompute_from_visible_history",
         "source_root": str(source_root),
+        "source_version": "ETHUCY_benchmark_v1",
         "mask_rng_key_format": "dataset|fold|split|scene_id|source_index|source_file|focal_id|condition|mask_seed -> sha256[:8] -> np.random.default_rng",
         "splits": {},
     }
@@ -347,7 +400,7 @@ def build_sdd_unit(args):
     return (condition, split), stats
 
 
-def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask_seed, workers):
+def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask_seed, workers, version="missing_history_v1"):
     with open(source_root / "original" / "sdd_train.pkl", "rb") as f:
         train_all = pickle.load(f)
     with open(source_root / "original" / "sdd_test.pkl", "rb") as f:
@@ -388,7 +441,7 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
             md["sha256"].update(stats["sha256"])
 
     manifest = {
-        "version": "missing_history_v1",
+        "version": version,
         "dataset": "SDD",
         "obs_len": OBS_LEN,
         "pred_len": PRED_LEN,
@@ -399,11 +452,13 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
         "split_seed": split_seed,
         "val_ratio": 0.1,
         "conditions": conditions,
+        "condition_specs": {c: CONDITION_SPECS[c] for c in conditions},
         "history_visibility_rule": "frames_6_and_7_visible",
         "future_policy": "complete",
         "coordinate_policy": "raw_scene_coordinates",
         "feature_policy": "recompute_from_visible_history",
         "source_root": str(source_root / "original"),
+        "source_version": "sdd_train.pkl / sdd_test.pkl (split_seed=2024)",
         "mask_rng_key_format": "dataset|fold|split|scene_id|source_index|source_file|focal_id|condition|mask_seed -> sha256[:8] -> np.random.default_rng",
         "splits": {},
     }
@@ -427,7 +482,7 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
 # ---------------------------------------------------------------------------
 
 def main():
-    ap = argparse.ArgumentParser(description="Build missing-history v1 datasets")
+    ap = argparse.ArgumentParser(description="Build missing-history datasets (v1 / v2_high)")
     ap.add_argument("--dataset", choices=["ethucy", "sdd"], required=True)
     ap.add_argument("--source-root", required=True)
     ap.add_argument("--output-root", required=True)
@@ -437,6 +492,8 @@ def main():
     ap.add_argument("--workers", type=int, default=min(32, os.cpu_count() or 8))
     ap.add_argument("--folds", nargs="+", default=FOLDS, help="ethucy only: subset of folds")
     ap.add_argument("--scenes", nargs="+", default=None, help="ethucy only: only these scene names (smoke test)")
+    ap.add_argument("--version", default="missing_history_v1",
+                    help="manifest version 标签：missing_history_v1 | missing_history_v2_high")
     args = ap.parse_args()
 
     if args.folds != FOLDS:
@@ -448,9 +505,10 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     if args.dataset == "ethucy":
-        build_ethucy(source_root, output_root, args.conditions, args.mask_seed, args.workers)
+        build_ethucy(source_root, output_root, args.conditions, args.mask_seed, args.workers,
+                     version=args.version, scenes=args.scenes)
     else:
-        build_sdd(source_root, output_root, args.conditions, args.split_seed, args.mask_seed, args.workers)
+        build_sdd(source_root, output_root, args.conditions, args.split_seed, args.mask_seed, args.workers, version=args.version)
 
 
 if __name__ == "__main__":
