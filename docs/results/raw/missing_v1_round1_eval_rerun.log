@@ -1,0 +1,547 @@
+===== complete / ETH (outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+Error executing job with overrides: ['fold=ETH', 'test=true', 'data_root=data/ETHUCY_missing_v1/complete', 'precision=bf16', "checkpoint='outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt'"]
+Traceback (most recent call last):
+  File "/home/lbh/DeMo/eval.py", line 31, in main
+    with open(os.path.join(HydraConfig.get().runtime.output_dir, "model.log"), "x") as f:
+FileExistsError: [Errno 17] File exists: '/home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ETH/eval/model.log'
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+{"cond": "complete", "fold": "ETH", "rc": 1}
+===== complete / HOTEL (outputs/ethucy_missing_v1_complete/fold_HOTEL/train/checkpoints/epoch=88.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=HOTEL split=test: 1197 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_HOTEL/train/checkpoints/epoch=88.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_HOTEL/train/checkpoints/epoch=88.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-49.pkl
+Total predictions: 1197
+TEST METRICS: {'test_MR': tensor(0.0067, device='cuda:0'), 'test_b-minFDE6': tensor(0.9560, device='cuda:0'), 'test_minADE1': tensor(0.4010, device='cuda:0'), 'test_minADE6': tensor(0.1975, device='cuda:0'), 'test_minFDE1': tensor(0.8012, device='cuda:0'), 'test_minFDE6': tensor(0.3514, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │    0.00657894741743803    │
+│      test_b-minFDE6       │    0.9555622935295105     │
+│       test_minADE1        │    0.4007742404937744     │
+│       test_minADE6        │    0.19719241559505463    │
+│       test_minFDE1        │    0.8008435368537903     │
+│       test_minFDE6        │    0.3512231111526489     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 19/19 0:00:02 • 0:00:00 9.82it/s 
+{"cond": "complete", "fold": "HOTEL", "rc": 0}
+===== complete / UNIV (outputs/ethucy_missing_v1_complete/fold_UNIV/train/checkpoints/epoch=16.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=UNIV split=test: 24334 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_UNIV/train/checkpoints/epoch=16.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_UNIV/train/checkpoints/epoch=16.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-49.pkl
+Total predictions: 24334
+TEST METRICS: {'test_MR': tensor(0.0295, device='cuda:0'), 'test_b-minFDE6': tensor(1.2265, device='cuda:0'), 'test_minADE1': tensor(0.6071, device='cuda:0'), 'test_minADE6': tensor(0.2989, device='cuda:0'), 'test_minFDE1': tensor(1.3018, device='cuda:0'), 'test_minFDE6': tensor(0.6000, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.029404528439044952    │
+│      test_b-minFDE6       │    1.2264835834503174     │
+│       test_minADE1        │     0.607153594493866     │
+│       test_minADE6        │    0.29899898171424866    │
+│       test_minFDE1        │    1.3015449047088623     │
+│       test_minFDE6        │     0.599987268447876     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 381/381 0:00:35 • 0:00:00 11.57it/s 
+{"cond": "complete", "fold": "UNIV", "rc": 0}
+===== complete / ZARA1 (outputs/ethucy_missing_v1_complete/fold_ZARA1/train/checkpoints/epoch=31.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA1 split=test: 2356 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ZARA1/train/checkpoints/epoch=31.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ZARA1/train/checkpoints/epoch=31.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-50.pkl
+Total predictions: 2356
+TEST METRICS: {'test_MR': tensor(0.0199, device='cuda:0'), 'test_b-minFDE6': tensor(1.1665, device='cuda:0'), 'test_minADE1': tensor(0.4565, device='cuda:0'), 'test_minADE6': tensor(0.2424, device='cuda:0'), 'test_minFDE1': tensor(0.9923, device='cuda:0'), 'test_minFDE6': tensor(0.4910, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.019847972318530083    │
+│      test_b-minFDE6       │    1.1658756732940674     │
+│       test_minADE1        │    0.4555436074733734     │
+│       test_minADE6        │    0.24209322035312653    │
+│       test_minFDE1        │    0.9905176162719727     │
+│       test_minFDE6        │    0.49042078852653503    │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 37/37 0:00:08 • 0:00:00 4.67it/s 
+{"cond": "complete", "fold": "ZARA1", "rc": 0}
+===== complete / ZARA2 (outputs/ethucy_missing_v1_complete/fold_ZARA2/train/checkpoints/epoch=15.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA2 split=test: 5910 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ZARA2/train/checkpoints/epoch=15.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ZARA2/train/checkpoints/epoch=15.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-50.pkl
+Total predictions: 5910
+TEST METRICS: {'test_MR': tensor(0.0179, device='cuda:0'), 'test_b-minFDE6': tensor(0.8685, device='cuda:0'), 'test_minADE1': tensor(0.3426, device='cuda:0'), 'test_minADE6': tensor(0.1810, device='cuda:0'), 'test_minFDE1': tensor(0.7209, device='cuda:0'), 'test_minFDE6': tensor(0.3595, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │    0.01780913956463337    │
+│      test_b-minFDE6       │     0.869260311126709     │
+│       test_minADE1        │    0.3428264558315277     │
+│       test_minADE6        │    0.18093746900558472    │
+│       test_minFDE1        │     0.720706582069397     │
+│       test_minFDE6        │    0.3592495322227478     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 93/93 0:00:14 • 0:00:00 6.44it/s 
+{"cond": "complete", "fold": "ZARA2", "rc": 0}
+===== random_single / ETH (outputs/ethucy_missing_v1_random_single/fold_ETH/train/checkpoints/epoch=62.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ETH split=test: 364 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ETH/train/checkpoints/epoch=62.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ETH/train/checkpoints/epoch=62.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-50.pkl
+Total predictions: 364
+TEST METRICS: {'test_MR': tensor(0.2060, device='cuda:0'), 'test_b-minFDE6': tensor(1.9673, device='cuda:0'), 'test_minADE1': tensor(1.0501, device='cuda:0'), 'test_minADE6': tensor(0.7044, device='cuda:0'), 'test_minFDE1': tensor(2.0577, device='cuda:0'), 'test_minFDE6': tensor(1.3269, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │    0.20123106241226196    │
+│      test_b-minFDE6       │     1.945974349975586     │
+│       test_minADE1        │    1.0363887548446655     │
+│       test_minADE6        │    0.6939889788627625     │
+│       test_minFDE1        │     2.028001546859741     │
+│       test_minFDE6        │     1.304189920425415     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6/6 0:00:00 • 0:00:00 10.46it/s 
+{"cond": "random_single", "fold": "ETH", "rc": 0}
+===== random_single / HOTEL (outputs/ethucy_missing_v1_random_single/fold_HOTEL/train/checkpoints/epoch=48.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=HOTEL split=test: 1197 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_HOTEL/train/checkpoints/epoch=48.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_HOTEL/train/checkpoints/epoch=48.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-51.pkl
+Total predictions: 1197
+TEST METRICS: {'test_MR': tensor(0.0100, device='cuda:0'), 'test_b-minFDE6': tensor(0.8653, device='cuda:0'), 'test_minADE1': tensor(0.3523, device='cuda:0'), 'test_minADE6': tensor(0.1780, device='cuda:0'), 'test_minFDE1': tensor(0.6677, device='cuda:0'), 'test_minFDE6': tensor(0.3151, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.009868420660495758    │
+│      test_b-minFDE6       │    0.8640955090522766     │
+│       test_minADE1        │    0.3517162799835205     │
+│       test_minADE6        │    0.17767247557640076    │
+│       test_minFDE1        │    0.6663174629211426     │
+│       test_minFDE6        │    0.3147434592247009     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 19/19 0:00:04 • 0:00:00 4.06it/s 
+{"cond": "random_single", "fold": "HOTEL", "rc": 0}
+===== random_single / UNIV (outputs/ethucy_missing_v1_random_single/fold_UNIV/train/checkpoints/epoch=79.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=UNIV split=test: 24334 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_UNIV/train/checkpoints/epoch=79.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_UNIV/train/checkpoints/epoch=79.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-52.pkl
+Total predictions: 24334
+TEST METRICS: {'test_MR': tensor(0.0388, device='cuda:0'), 'test_b-minFDE6': tensor(1.3142, device='cuda:0'), 'test_minADE1': tensor(0.6654, device='cuda:0'), 'test_minADE6': tensor(0.3190, device='cuda:0'), 'test_minFDE1': tensor(1.4063, device='cuda:0'), 'test_minFDE6': tensor(0.6470, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │    0.03896583244204521    │
+│      test_b-minFDE6       │    1.3144973516464233     │
+│       test_minADE1        │    0.6653661727905273     │
+│       test_minADE6        │    0.3191860616207123     │
+│       test_minFDE1        │    1.4059486389160156     │
+│       test_minFDE6        │    0.6473169922828674     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 381/381 0:01:28 • 0:00:00 5.64it/s 
+{"cond": "random_single", "fold": "UNIV", "rc": 0}
+===== random_single / ZARA1 (outputs/ethucy_missing_v1_random_single/fold_ZARA1/train/checkpoints/epoch=88.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA1 split=test: 2356 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ZARA1/train/checkpoints/epoch=88.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ZARA1/train/checkpoints/epoch=88.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-53.pkl
+Total predictions: 2356
+TEST METRICS: {'test_MR': tensor(0.0178, device='cuda:0'), 'test_b-minFDE6': tensor(1.1550, device='cuda:0'), 'test_minADE1': tensor(0.4630, device='cuda:0'), 'test_minADE6': tensor(0.2366, device='cuda:0'), 'test_minFDE1': tensor(1.0122, device='cuda:0'), 'test_minFDE6': tensor(0.4794, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.017736487090587616    │
+│      test_b-minFDE6       │    1.1543591022491455     │
+│       test_minADE1        │    0.4619576334953308     │
+│       test_minADE6        │    0.23623833060264587    │
+│       test_minFDE1        │    1.0102825164794922     │
+│       test_minFDE6        │    0.4788029193878174     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 37/37 0:00:13 • 0:00:00 2.72it/s 
+{"cond": "random_single", "fold": "ZARA1", "rc": 0}
+===== random_single / ZARA2 (outputs/ethucy_missing_v1_random_single/fold_ZARA2/train/checkpoints/epoch=51.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA2 split=test: 5910 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ZARA2/train/checkpoints/epoch=51.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_single/fold_ZARA2/train/checkpoints/epoch=51.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-53.pkl
+Total predictions: 5910
+TEST METRICS: {'test_MR': tensor(0.0198, device='cuda:0'), 'test_b-minFDE6': tensor(0.8670, device='cuda:0'), 'test_minADE1': tensor(0.3287, device='cuda:0'), 'test_minADE6': tensor(0.1807, device='cuda:0'), 'test_minFDE1': tensor(0.7248, device='cuda:0'), 'test_minFDE6': tensor(0.3704, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.019657257944345474    │
+│      test_b-minFDE6       │    0.8674979209899902     │
+│       test_minADE1        │    0.3285590410232544     │
+│       test_minADE6        │    0.18055085837841034    │
+│       test_minFDE1        │    0.7240524888038635     │
+│       test_minFDE6        │    0.3698330521583557     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 93/93 0:00:13 • 0:00:00 7.31it/s 
+{"cond": "random_single", "fold": "ZARA2", "rc": 0}
+===== random_block2 / ETH (outputs/ethucy_missing_v1_random_block2/fold_ETH/train/checkpoints/epoch=26.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ETH split=test: 364 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ETH/train/checkpoints/epoch=26.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ETH/train/checkpoints/epoch=26.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-53.pkl
+Total predictions: 364
+TEST METRICS: {'test_MR': tensor(0.2473, device='cuda:0'), 'test_b-minFDE6': tensor(1.9603, device='cuda:0'), 'test_minADE1': tensor(1.1043, device='cuda:0'), 'test_minADE6': tensor(0.7397, device='cuda:0'), 'test_minFDE1': tensor(2.1719, device='cuda:0'), 'test_minFDE6': tensor(1.3501, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │    0.2426609843969345     │
+│      test_b-minFDE6       │    1.9385313987731934     │
+│       test_minADE1        │    1.0915812253952026     │
+│       test_minADE6        │    0.7271168828010559     │
+│       test_minFDE1        │    2.1438214778900146     │
+│       test_minFDE6        │    1.3253227472305298     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6/6 0:00:00 • 0:00:00 44.84it/s 
+{"cond": "random_block2", "fold": "ETH", "rc": 0}
+===== random_block2 / HOTEL (outputs/ethucy_missing_v1_random_block2/fold_HOTEL/train/checkpoints/epoch=76.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=HOTEL split=test: 1197 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_HOTEL/train/checkpoints/epoch=76.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_HOTEL/train/checkpoints/epoch=76.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-53.pkl
+Total predictions: 1197
+TEST METRICS: {'test_MR': tensor(0.0109, device='cuda:0'), 'test_b-minFDE6': tensor(0.9544, device='cuda:0'), 'test_minADE1': tensor(0.3818, device='cuda:0'), 'test_minADE6': tensor(0.2039, device='cuda:0'), 'test_minFDE1': tensor(0.7537, device='cuda:0'), 'test_minFDE6': tensor(0.3697, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.010690789669752121    │
+│      test_b-minFDE6       │    0.9540949463844299     │
+│       test_minADE1        │    0.3807942569255829     │
+│       test_minADE6        │    0.20391622185707092    │
+│       test_minFDE1        │    0.7516428232192993     │
+│       test_minFDE6        │    0.37000495195388794    │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 19/19 0:00:02 • 0:00:00 13.35it/s 
+{"cond": "random_block2", "fold": "HOTEL", "rc": 0}
+===== random_block2 / UNIV (outputs/ethucy_missing_v1_random_block2/fold_UNIV/train/checkpoints/epoch=91.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=UNIV split=test: 24334 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_UNIV/train/checkpoints/epoch=91.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_UNIV/train/checkpoints/epoch=91.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-54.pkl
+Total predictions: 24334
+TEST METRICS: {'test_MR': tensor(0.0538, device='cuda:0'), 'test_b-minFDE6': tensor(1.3878, device='cuda:0'), 'test_minADE1': tensor(0.6632, device='cuda:0'), 'test_minADE6': tensor(0.3505, device='cuda:0'), 'test_minFDE1': tensor(1.4226, device='cuda:0'), 'test_minFDE6': tensor(0.7249, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.053975675255060196    │
+│      test_b-minFDE6       │    1.3879528045654297     │
+│       test_minADE1        │    0.6630664467811584     │
+│       test_minADE6        │    0.35059598088264465    │
+│       test_minFDE1        │    1.4219911098480225     │
+│       test_minFDE6        │    0.7250396609306335     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 381/381 0:00:28 • 0:00:00 13.64it/s 
+{"cond": "random_block2", "fold": "UNIV", "rc": 0}
+===== random_block2 / ZARA1 (outputs/ethucy_missing_v1_random_block2/fold_ZARA1/train/checkpoints/epoch=58.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA1 split=test: 2356 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ZARA1/train/checkpoints/epoch=58.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ZARA1/train/checkpoints/epoch=58.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-54.pkl
+Total predictions: 2356
+TEST METRICS: {'test_MR': tensor(0.0178, device='cuda:0'), 'test_b-minFDE6': tensor(1.1506, device='cuda:0'), 'test_minADE1': tensor(0.4561, device='cuda:0'), 'test_minADE6': tensor(0.2432, device='cuda:0'), 'test_minFDE1': tensor(0.9881, device='cuda:0'), 'test_minFDE6': tensor(0.4910, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.017736487090587616    │
+│      test_b-minFDE6       │    1.1501668691635132     │
+│       test_minADE1        │    0.4553135931491852     │
+│       test_minADE6        │    0.24289198219776154    │
+│       test_minFDE1        │    0.9868185520172119     │
+│       test_minFDE6        │    0.49063634872436523    │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 37/37 0:00:07 • 0:00:00 5.17it/s 
+{"cond": "random_block2", "fold": "ZARA1", "rc": 0}
+===== random_block2 / ZARA2 (outputs/ethucy_missing_v1_random_block2/fold_ZARA2/train/checkpoints/epoch=32.ckpt) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+EthUcyBenchmarkDataset fold=ZARA2 split=test: 5910 samples
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ZARA2/train/checkpoints/epoch=32.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_random_block2/fold_ZARA2/train/checkpoints/epoch=32.ckpt
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-55.pkl
+Total predictions: 5910
+TEST METRICS: {'test_MR': tensor(0.0222, device='cuda:0'), 'test_b-minFDE6': tensor(0.9275, device='cuda:0'), 'test_minADE1': tensor(0.3109, device='cuda:0'), 'test_minADE6': tensor(0.1785, device='cuda:0'), 'test_minFDE1': tensor(0.6873, device='cuda:0'), 'test_minFDE6': tensor(0.3606, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │   0.022009408101439476    │
+│      test_b-minFDE6       │    0.9275778532028198     │
+│       test_minADE1        │    0.3105129897594452     │
+│       test_minADE6        │    0.17831049859523773    │
+│       test_minFDE1        │    0.6862117648124695     │
+│       test_minFDE6        │    0.35995176434516907    │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 93/93 0:00:05 • 0:00:00 17.30it/s 
+{"cond": "random_block2", "fold": "ZARA2", "rc": 0}
+ALL_EVAL_RERUN_DONE
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt
+EthUcyBenchmarkDataset fold=ETH split=test: 364 samples
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-56.pkl
+Total predictions: 364
+TEST METRICS: {'test_MR': tensor(0.2005, device='cuda:0'), 'test_b-minFDE6': tensor(1.9785, device='cuda:0'), 'test_minADE1': tensor(1.0977, device='cuda:0'), 'test_minADE6': tensor(0.7397, device='cuda:0'), 'test_minFDE1': tensor(2.1421, device='cuda:0'), 'test_minFDE6': tensor(1.3552, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │         0.203125          │
+│      test_b-minFDE6       │     1.982757568359375     │
+│       test_minADE1        │    1.1157749891281128     │
+│       test_minADE6        │    0.7408468723297119     │
+│       test_minFDE1        │     2.170733690261841     │
+│       test_minFDE6        │    1.3546961545944214     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6/6 0:00:00 • 0:00:00 44.56it/s 
+rc=0
+===== complete / ETH (rerun2) =====
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/hydra/_internal/defaults_list.py:251: UserWarning: In 'config_ethucy_benchmark': Defaults list is missing `_self_`. See https://hydra.cc/docs/upgrades/1.0_to_1.1/default_composition_order for more information
+  warnings.warn(msg, UserWarning)
+Seed set to 2024
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+You are using a CUDA device ('NVIDIA RTX 5880 Ada Generation') that has Tensor Cores. To properly utilize them, you should set `torch.set_float32_matmul_precision('medium' | 'high')` which will trade-off precision for performance. For more details, read https://pytorch.org/docs/stable/generated/torch.set_float32_matmul_precision.html#torch.set_float32_matmul_precision
+Restoring states from the checkpoint path at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt
+/home/lbh/.conda/envs/DeMo/lib/python3.10/site-packages/pytorch_lightning/trainer/call.py:283: Be aware that when using `ckpt_path`, callbacks used to create the checkpoint need to be provided during `Trainer` instantiation. Please add the following callbacks: ["ModelCheckpoint{'monitor': 'val_minFDE6', 'mode': 'min', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None}"].
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [1]
+Loaded model weights from the checkpoint at /home/lbh/DeMo/outputs/ethucy_missing_v1_complete/fold_ETH/train/checkpoints/epoch=73.ckpt
+EthUcyBenchmarkDataset fold=ETH split=test: 364 samples
+ETH/UCY predictions saved to submission/ethucy_predictions_2026-08-31-14-57.pkl
+Total predictions: 364
+TEST METRICS: {'test_MR': tensor(0.2005, device='cuda:0'), 'test_b-minFDE6': tensor(1.9785, device='cuda:0'), 'test_minADE1': tensor(1.0977, device='cuda:0'), 'test_minADE6': tensor(0.7397, device='cuda:0'), 'test_minFDE1': tensor(2.1421, device='cuda:0'), 'test_minFDE6': tensor(1.3552, device='cuda:0')}
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│          test_MR          │         0.203125          │
+│      test_b-minFDE6       │     1.982757568359375     │
+│       test_minADE1        │    1.1157749891281128     │
+│       test_minADE6        │    0.7408468723297119     │
+│       test_minFDE1        │     2.170733690261841     │
+│       test_minFDE6        │    1.3546961545944214     │
+└───────────────────────────┴───────────────────────────┘
+Testing ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6/6 0:00:00 • 0:00:00 45.95it/s 
+{"rc": 0}
