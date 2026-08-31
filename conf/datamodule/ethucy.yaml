@@ -1,0 +1,22 @@
+name: ethucy
+phase: default
+
+target:
+  _target_: src.datamodule.ethucy_datamodule.EthUcyDataModule
+
+  data_root: 'data/ETHUCY_processed'
+  # Standard ETH/UCY leave-one-out protocol (5-fold CV).
+  # This config is one fold: train on 3, val on 1, test on 1.
+  # To test on a different scene, swap test_scenes and adjust train/val accordingly.
+  # Full protocol: run 5 folds with test_scenes cycling through all 5 scenes,
+  # then average results.
+  train_scenes: [HOTEL, UNIV, ZARA2]
+  val_scenes: [ZARA1]
+  test_scenes: [ETH]
+  obs_len: 8
+  pred_len: 12
+  train_batch_size: ${batch_size}
+  val_batch_size: ${batch_size}
+  test_batch_size: ${batch_size}
+  num_workers: ${num_workers}
+  pin_memory: True

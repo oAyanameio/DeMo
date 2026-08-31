@@ -111,7 +111,14 @@ def create_block(
     if ssm_cfg is None:
         ssm_cfg = {}
     factory_kwargs = {"device": device, "dtype": dtype}
-    mixer_cls = partial(Mamba, layer_idx=layer_idx, bimamba=bimamba, **ssm_cfg, **factory_kwargs)
+    # mamba-ssm 1.0.1 does not support bimamba; detect and fall back
+    import inspect
+    _mamba_params = set(inspect.signature(Mamba.__init__).parameters.keys())
+    mixer_kwargs = {"layer_idx": layer_idx, **ssm_cfg, **factory_kwargs}
+    if "bimamba" in _mamba_params:
+        mixer_cls = partial(Mamba, bimamba=bimamba, **mixer_kwargs)
+    else:
+        mixer_cls = partial(Mamba, **mixer_kwargs)
     norm_cls = partial(
         nn.LayerNorm if not rms_norm else RMSNorm, eps=norm_epsilon, **factory_kwargs
     )

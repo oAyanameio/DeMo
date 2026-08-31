@@ -1,0 +1,18 @@
+name: moflow_sdd
+phase: default
+
+target:
+  _target_: src.datamodule.moflow_sdd_datamodule.MoFlowSddDataModule
+
+  data_root: '/home/lbh/DeMo/data/sdd'
+  # SDD：无 LOO 子集，train/val 由 sdd_train.pkl 确定性 90/10 划分，
+  # held-out test 用 sdd_test.pkl。协议 8 obs / 12 pred，与 ETH/UCY 一致。
+  obs_len: 8
+  pred_len: 12
+  train_batch_size: ${batch_size}
+  val_batch_size: ${batch_size}
+  test_batch_size: ${batch_size}
+  num_workers: ${num_workers}
+  pin_memory: True
+  val_ratio: 0.1
+  seed: 2024

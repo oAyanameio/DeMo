@@ -1,0 +1,101 @@
+"""SDD 协议：训练 + held-out test 评测（单臂，单向或双向 mamba）。
+
+用法:
+    CUDA_VISIBLE_DEVICES=<gpu> python scripts/训练与评估/run_sdd.py <config_name> [epochs]
+
+流程:
+    1. train.py 训练（monitor=val_minFDE20, save_top_k=3）
+    2. 从 metrics.csv 找 val_minFDE20 最小的 epoch（与 checkpoint 保存口径一致）
+    3. eval.py test=true 在 sdd_test.pkl 上重算 test_minADE20/test_minFDE20
+结果写入 outputs/<config>_sdd_summary.txt。
+"""
+import csv
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+D = Path("/home/lbh/DeMo")
+PY = f"{Path.home()}/.conda/envs/DeMo/bin/python"
+OUT_NAME = {
+    "config_moflow_sdd": "moflow_sdd",
+    "config_moflow_sdd_bimamba": "moflow_sdd_bimamba",
+}
+
+
+def find_best_epoch(run_dir: Path):
+    csvs = sorted(run_dir.glob("logs/version_*/metrics.csv"))
+    best = None
+    for c in csvs:
+        with open(c) as fh:
+            for r in csv.DictReader(fh):
+                if not r.get("val_minFDE20"):
+                    continue
+                v = float(r["val_minFDE20"])
+                if best is None or v < best[0]:
+                    best = (v, int(float(r["epoch"])))
+    return best
+
+
+def main():
+    cfg = sys.argv[1]
+    epochs = sys.argv[2] if len(sys.argv) > 2 else "100"
+    out_name = OUT_NAME.get(cfg)
+    assert out_name, f"unknown config: {cfg}"
+    env = dict(os.environ)
+
+    # 1. train
+    print(f"===== TRAIN {cfg} (epochs={epochs}) =====", flush=True)
+    p = subprocess.run(
+        [PY, "-u", "train.py", f"--config-name={cfg}", f"epochs={epochs}"],
+        cwd=D,
+        env=env,
+    )
+    if p.returncode != 0:
+        print(f"TRAIN FAILED rc={p.returncode}", flush=True)
+        return
+
+    # 2. best checkpoint (monitor=val_minFDE20)
+    runs = sorted((D / "outputs" / out_name).glob("*/"),
+                  key=lambda x: x.stat().st_mtime)
+    assert runs, "no output run dir found"
+    run_dir = runs[-1]
+    best = find_best_epoch(run_dir)
+    assert best, "no val_minFDE20 found in metrics.csv"
+    best_val, best_epoch = best
+    ck = run_dir / "checkpoints" / f"epoch={best_epoch}.ckpt"
+    assert ck.exists(), f"checkpoint missing: {ck}"
+
+    # 3. eval held-out test
+    link = run_dir / "checkpoints" / "best_for_eval.ckpt"
+    link.unlink(missing_ok=True)
+    link.symlink_to(ck)
+    out = subprocess.run(
+        [PY, "-u", "eval.py", f"--config-name={cfg}", "gpus=1", "test=true",
+         f"checkpoint={link}"],
+        cwd=D,
+        env=env,
+        capture_output=True,
+        text=True,
+    ).stdout
+    link.unlink(missing_ok=True)
+
+    n = re.search(r"Total predictions:\s+(\d+)", out)
+    m = re.search(r"test_minADE20[^0-9]*([0-9.]+)", out)
+    f = re.search(r"test_minFDE20[^0-9]*([0-9.]+)", out)
+
+    line = (
+        f"{cfg:28s} best_epoch={best_epoch:>3d} val_minFDE20={best_val:.4f}  "
+        f"N={n.group(1) if n else '?':>5s}  "
+        f"test_minADE20={m.group(1) if m else '?':>8s}  "
+        f"test_minFDE20={f.group(1) if f else '?':>8s}"
+    )
+    print("===== RESULT =====", flush=True)
+    print(line, flush=True)
+    with open(D / "outputs" / f"{cfg}_sdd_summary.txt", "a") as fh:
+        fh.write(line + "\n")
+
+
+if __name__ == "__main__":
+    main()

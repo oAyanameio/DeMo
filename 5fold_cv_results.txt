@@ -1,0 +1,31 @@
+5-Fold CV Results — 2026-08-20 21:05
+GPUs=[0,1,2,3] epochs=80 batch=128
+
+=== BEST checkpoints (by val_minFDE6 on validation set) ===
+Test     best_ep  minADE6    minFDE6        MR
+---------------------------------------------
+ETH           8    2.0427     1.2666    0.2038
+HOTEL        14    2.3937     3.4998    0.4884
+UNIV         14    1.1628     1.2455    0.1575
+ZARA1         6    1.0937     1.2399    0.1718
+ZARA2         9    0.8641     0.8526    0.1240
+---------------------------------------------
+AVG                1.5114     1.6209    0.2291
+
+=== Comparison with last.ckpt (epoch 80) ===
+Test     best_FDE6   last_FDE6   improvement
+---------------------------------------------
+ETH        1.2666      1.8771       +32.5%
+HOTEL      3.4998      3.6091        +3.0%
+UNIV       1.2455      1.3534        +8.0%
+ZARA1      1.2399      1.1899        -4.2%
+ZARA2      0.8526      0.8824        +3.4%
+
+=== Issues found ===
+1. find_best_ckpt() picks largest epoch number, not best val_minFDE6 epoch
+2. epoch=N.ckpt filenames contain '=' which breaks Hydra CLI parsing
+3. HOTEL fold severely underperforms: FDE6=3.50 vs AVG=1.62, MR=48.8%
+   - NOT a checkpoint selection issue (best ckpt only 3% better)
+   - Possible causes: val=ZARA1 (not in train) causes overfitting to ZARA1,
+     HOTEL scene geometry differs from train scenes (ETH,UNIV,ZARA2)
+4. Model overfits quickly: best epochs are 6-14 out of 80

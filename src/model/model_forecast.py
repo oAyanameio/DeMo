@@ -24,8 +24,18 @@ class ModelForecast(nn.Module):
         qkv_bias=False,
         drop_path=0.2,
         future_steps: int = 60,
+        use_map: bool = True,
+        num_actor_types: int = 4,
+        num_modes: int = 6,
+        bimamba: bool = False,
+        dt: float = 0.1,
     ) -> None:
         super().__init__()
+
+        self.future_steps = future_steps
+        self.use_map = use_map
+        self.dt = dt
+        self.num_actor_types = num_actor_types
 
         self.hist_embed_mlp = nn.Sequential(
             nn.Linear(4, 64),
@@ -39,8 +49,8 @@ class ModelForecast(nn.Module):
                 create_block(  
                     d_model=embed_dim,
                     layer_idx=i,
-                    drop_path=0.2,  
-                    bimamba=False,  
+                    drop_path=0.2,
+                    bimamba=bimamba,
                     rms_norm=True,  
                 )
                 for i in range(4)
@@ -49,7 +59,7 @@ class ModelForecast(nn.Module):
         self.norm_f = RMSNorm(embed_dim, eps=1e-5)
         self.drop_path = DropPath(drop_path)
 
-        self.lane_embed = LaneEmbeddingLayer(3, embed_dim)
+        self.lane_embed = LaneEmbeddingLayer(3, embed_dim) if use_map else None
 
         self.pos_embed = nn.Sequential(
             nn.Linear(4, embed_dim),
@@ -70,8 +80,8 @@ class ModelForecast(nn.Module):
         )
         self.norm = nn.LayerNorm(embed_dim)
 
-        self.actor_type_embed = nn.Parameter(torch.Tensor(4, embed_dim))
-        self.lane_type_embed = nn.Parameter(torch.Tensor(3, embed_dim))
+        self.actor_type_embed = nn.Parameter(torch.Tensor(num_actor_types, embed_dim))
+        self.lane_type_embed = nn.Parameter(torch.Tensor(3, embed_dim)) if use_map else None
 
         self.dense_predictor = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Linear(256, future_steps * 2)
@@ -81,13 +91,14 @@ class ModelForecast(nn.Module):
             nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
         )
 
-        self.time_decoder = TimeDecoder()
+        self.time_decoder = TimeDecoder(future_len=future_steps, dim=embed_dim, num_modes=num_modes)
 
         self.initialize_weights()
 
     def initialize_weights(self):
         nn.init.normal_(self.actor_type_embed, std=0.02)
-        nn.init.normal_(self.lane_type_embed, std=0.02)
+        if self.lane_type_embed is not None:
+            nn.init.normal_(self.lane_type_embed, std=0.02)
 
         self.apply(self._init_weights)
 
@@ -143,38 +154,49 @@ class ModelForecast(nn.Module):
 
         actor_feat = actor_feat[:, -1]
         actor_feat_tmp = torch.zeros(
-            B * N, actor_feat.shape[-1], device=actor_feat.device
+            B * N, actor_feat.shape[-1], dtype=actor_feat.dtype, device=actor_feat.device
         )
         actor_feat_tmp[hist_feat_key_valid] = actor_feat
         actor_feat = actor_feat_tmp.view(B, N, actor_feat.shape[-1])
 
-        # map encoding
-        lane_valid_mask = data["lane_valid_mask"]
-        lane_normalized = data["lane_positions"] - data["lane_centers"].unsqueeze(-2)
-        lane_normalized = torch.cat(
-            [lane_normalized, lane_valid_mask[..., None]], dim=-1
-        )
-        B, M, L, D = lane_normalized.shape
-        lane_feat = self.lane_embed(lane_normalized.view(-1, L, D).contiguous())
-        lane_feat = lane_feat.view(B, M, -1)
+        # map encoding (only when use_map=True)
+        if self.use_map:
+            lane_valid_mask = data["lane_valid_mask"]
+            lane_normalized = data["lane_positions"] - data["lane_centers"].unsqueeze(-2)
+            lane_normalized = torch.cat(
+                [lane_normalized, lane_valid_mask[..., None]], dim=-1
+            )
+            B, M, L, D = lane_normalized.shape
+            lane_feat = self.lane_embed(lane_normalized.view(-1, L, D).contiguous())
+            lane_feat = lane_feat.view(B, M, -1)
 
         # type embedding and position embedding
-        x_centers = torch.cat([data["x_centers"], data["lane_centers"]], dim=1)
-        angles = torch.cat([data["x_angles"][:, :, -1], data["lane_angles"]], dim=1)
+        if self.use_map:
+            x_centers = torch.cat([data["x_centers"], data["lane_centers"]], dim=1)
+            angles = torch.cat([data["x_angles"][:, :, -1], data["lane_angles"]], dim=1)
+        else:
+            x_centers = data["x_centers"]
+            angles = data["x_angles"][:, :, -1]
         x_angles = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
         pos_feat = torch.cat([x_centers, x_angles], dim=-1)
         pos_embed = self.pos_embed(pos_feat)
 
         actor_type_embed = self.actor_type_embed[data["x_attr"][..., 2].long()]
-        lane_type_embed = self.lane_type_embed[data["lane_attr"][..., 0].long()]
-        actor_feat += actor_type_embed
-        lane_feat += lane_type_embed
+        actor_feat = actor_feat + actor_type_embed
+
+        if self.use_map:
+            lane_type_embed = self.lane_type_embed[data["lane_attr"][..., 0].long()]
+            lane_feat = lane_feat + lane_type_embed
 
         # scene context features
-        x_encoder = torch.cat([actor_feat, lane_feat], dim=1)
-        key_valid_mask = torch.cat(
-            [data["x_key_valid_mask"], data["lane_key_valid_mask"]], dim=1
-        )
+        if self.use_map:
+            x_encoder = torch.cat([actor_feat, lane_feat], dim=1)
+            key_valid_mask = torch.cat(
+                [data["x_key_valid_mask"], data["lane_key_valid_mask"]], dim=1
+            )
+        else:
+            x_encoder = actor_feat
+            key_valid_mask = data["x_key_valid_mask"]
 
         x_encoder = x_encoder + pos_embed
 
@@ -214,13 +236,17 @@ class ModelForecast(nn.Module):
         dense_predict = None
         mode = None
 
-        # outputs of other agents
+        # outputs of other agents (handle N=1: no other agents)
         x_others = x_encoder[:, 1:N]
-        y_hat_others = self.dense_predictor(x_others).view(B, x_others.size(1), -1, 2)
+        if x_others.size(1) > 0:
+            y_hat_others = self.dense_predictor(x_others).view(B, x_others.size(1), -1, 2)
+        else:
+            y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
         # state query initialization
-        time = torch.arange(60).long().to(x_encoder.device)
-        time = time * 0.1 + 0.1
+        # dt 参数化：AV2 原始 0.1s/帧（默认），ETH/UCY/SDD 0.4s/帧（frame_stride=10）
+        time = torch.arange(self.future_steps).long().to(x_encoder.device)
+        time = time * self.dt + self.dt
         time = time.unsqueeze(-1)
         mode = self.time_embedding_mlp(time)
         mode = mode.repeat(x_encoder.size(0), 1, 1)

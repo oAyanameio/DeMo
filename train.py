@@ -7,10 +7,8 @@ from hydra.utils import instantiate
 from pytorch_lightning.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
-    RichModelSummary,
-    RichProgressBar,
 )
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
@@ -18,7 +16,7 @@ def main(conf):
     pl.seed_everything(conf.seed, workers=True)
     output_dir = HydraConfig.get().runtime.output_dir
 
-    logger = TensorBoardLogger(save_dir=output_dir, name="logs")
+    logger = CSVLogger(save_dir=output_dir, name="logs")
 
     callbacks = [
         ModelCheckpoint(
@@ -29,8 +27,6 @@ def main(conf):
             save_top_k=conf.save_top_k,
             save_last=True,
         ),
-        RichModelSummary(max_depth=1),
-        RichProgressBar(),
         LearningRateMonitor(logging_interval="epoch"),
     ]
 
@@ -41,11 +37,12 @@ def main(conf):
         max_epochs=conf.epochs,
         accelerator="gpu",
         devices=conf.gpus,
-        strategy="ddp_find_unused_parameters_false",
+        strategy="auto",
         callbacks=callbacks,
         limit_train_batches=conf.limit_train_batches,
         limit_val_batches=conf.limit_val_batches,
         sync_batchnorm=conf.sync_bn,
+        precision=conf.precision,
     )
 
     model = instantiate(conf.model.target)

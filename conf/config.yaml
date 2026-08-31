@@ -26,6 +26,7 @@ sync_bn: true
 batch_size: 16
 epochs: 60
 warmup_epochs: 10
+precision: 32-true  # AV2 默认入口；ETH/UCY benchmark 配置覆盖为 bf16
 
 # optimizer
 lr: 0.003  

@@ -1,0 +1,17 @@
+name: sdd_missing
+phase: actor-only
+
+target:
+  _target_: src.datamodule.sdd_missing_datamodule.SddMissingDataModule
+
+  # missing_history_v1：按 condition 读取 data/SDD_missing_v1/<condition>/{train,val,test}
+  # 划分在制作阶段已固定（split_seed=2024），此处只读目录。
+  data_root: '/home/lbh/DeMo/data/SDD_missing_v1'
+  condition: complete   # complete | random_single | random_block2
+  obs_len: 8
+  pred_len: 12
+  train_batch_size: ${batch_size}
+  val_batch_size: ${batch_size}
+  test_batch_size: ${batch_size}
+  num_workers: ${num_workers}
+  pin_memory: True

@@ -105,6 +105,51 @@ python eval.py gpus=1 test=true
 | [DeMo](https://drive.google.com/file/d/1xqj8T5M2cczIZU26poseAQri6VE6v9a0/view?usp=drive_link)   |  1.578  |  3.961  |  0.645  |  1.247  |
 | [DeMo+RealMotion](https://drive.google.com/file/d/131pcHXP-vLcyypZWn6Es7n6TT8bxs4rN/view?usp=drive_link) |  1.478  |  3.728  |  0.607  |  1.186  |
 
+## 🚶 ETH/UCY 行人轨迹预测适配
+
+DeMo 现已支持 [ETH/UCY](https://eth-visual.epfl.ch/) 行人轨迹预测数据集。
+
+### 快速开始
+
+```bash
+# 1. 预处理 ETH/UCY 原始数据
+python scripts/数据集构建/preprocess_ethucy.py \
+    --data_root /path/to/ethucy \
+    --output_root data/ETHUCY_processed \
+    --frame_stride 10 \
+    --obs_len 8 \
+    --pred_len 12
+
+# 2. 训练
+python train.py --config-name=config_ethucy
+
+# 3. 验证（指定 checkpoint）
+python eval.py \
+    --config-name=config_ethucy \
+    checkpoint=/path/to/checkpoint.ckpt
+
+# 4. 测试指定场景
+python eval.py \
+    --config-name=config_ethucy \
+    datamodule.test_scenes=[ETH] \
+    checkpoint=/path/to/checkpoint.ckpt \
+    test=true
+```
+
+### 实验协议
+
+- 数据格式：ETH/UCY 原始 `.txt`
+- 输入：历史 8 帧，预测：未来 12 帧
+- 采样频率：2.5 Hz（frame_stride=10）
+- 多模态数量：6
+- 评估指标：ADE/FDE、minADE6/minFDE6
+- 数据划分：Leave-One-Scene-Out
+- 场景特征：仅使用行人历史轨迹和社会交互，不使用车道线地图
+
+### 与 AV2 的关系
+
+ETH/UCY 适配采用独立的代码分支，不修改现有 AV2 数据流程。AV2 配置和训练方式保持不变。
+
 ### Qualitative Results
 <div align="center">
   <img src="assets/visual.jpg"/>

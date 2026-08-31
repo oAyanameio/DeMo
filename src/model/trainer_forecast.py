@@ -10,7 +10,6 @@ from torchmetrics import MetricCollection
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.metrics import MR, minADE, minFDE, brier_minFDE
 from src.utils.optim import WarmupCosLR
-from src.utils.submission_av2 import SubmissionAv2
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from .model_forecast import ModelForecast, StreamModelForecast
 
@@ -24,14 +23,28 @@ class Trainer(pl.LightningModule):
         warmup_epochs: int = 10,
         epochs: int = 60,
         weight_decay: float = 1e-4,
+        submission_type: str = "av2",
     ) -> None:
         super(Trainer, self).__init__()
         self.warmup_epochs = warmup_epochs
         self.epochs = epochs
         self.lr = lr
         self.weight_decay = weight_decay
+        self.submission_type = submission_type
         self.save_hyperparameters()
-        self.submission_handler = SubmissionAv2()
+        if submission_type == "av2":
+            # Lazy import: avoids hard dependency on the av2 package for
+            # ETH/UCY-only runs while preserving AV2 functionality.
+            from src.utils.submission_av2 import SubmissionAv2
+            self.submission_handler = SubmissionAv2()
+        elif submission_type == "ethucy":
+            from src.utils.submission_ethucy import SubmissionEthUcy
+            self.submission_handler = SubmissionEthUcy()
+        else:
+            raise ValueError(
+                f"Unknown submission_type: {submission_type}. "
+                f"Expected 'av2' or 'ethucy'."
+            )
 
         model_type = model.pop('type')
 
@@ -41,14 +54,16 @@ class Trainer(pl.LightningModule):
             self.net.load_from_checkpoint(pretrained_weights)
             print('Pretrained weights have been loaded.')
 
+        num_modes = model.get('num_modes', 6)
+
         metrics = MetricCollection(
             {
                 "minADE1": minADE(k=1),
-                "minADE6": minADE(k=6),
+                f"minADE{num_modes}": minADE(k=num_modes),
                 "minFDE1": minFDE(k=1),
-                "minFDE6": minFDE(k=6),
+                f"minFDE{num_modes}": minFDE(k=num_modes),
                 "MR": MR(),
-                "b-minFDE6": brier_minFDE(k=6),
+                f"b-minFDE{num_modes}": brier_minFDE(k=num_modes),
             }
         )
         self.laplace_loss = LaplaceNLLLoss()
@@ -120,9 +135,12 @@ class Trainer(pl.LightningModule):
 
         # loss for other agents
         others_reg_mask = data["target_mask"][:, 1:]
-        others_reg_loss = F.smooth_l1_loss(
-            y_hat_others[others_reg_mask], y_others[others_reg_mask]
-        )
+        if others_reg_mask.any():
+            others_reg_loss = F.smooth_l1_loss(
+                y_hat_others[others_reg_mask], y_others[others_reg_mask]
+            )
+        else:
+            others_reg_loss = y_hat_others.new_zeros(())
 
         # Laplace loss, which is not necessary
         predictions = {}
@@ -209,9 +227,13 @@ class Trainer(pl.LightningModule):
     def on_test_start(self) -> None:
         save_dir = Path("./submission")
         save_dir.mkdir(exist_ok=True)
-        self.submission_handler = SubmissionAv2(
-            save_dir=save_dir
-        )
+        if self.submission_type == "av2":
+            from src.utils.submission_av2 import SubmissionAv2
+            self.submission_handler = SubmissionAv2(save_dir=str(save_dir))
+        elif self.submission_type == "ethucy":
+            from src.utils.submission_ethucy import SubmissionEthUcy
+            self.submission_handler = SubmissionEthUcy(save_dir=str(save_dir))
+        self.test_metrics = self.val_metrics.clone(prefix="test_")
 
     def test_step(self, data, batch_idx) -> None:
         if isinstance(data, list):
@@ -221,9 +243,18 @@ class Trainer(pl.LightningModule):
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
         self.submission_handler.format_data(data, out["y_hat"], out["pi"])
+        metrics = self.test_metrics(out, data['target'][:, 0])
+        self.log_dict(
+            metrics,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            batch_size=1,
+        )
 
     def on_test_end(self) -> None:
         self.submission_handler.generate_submission_file()
+        print("TEST METRICS:", self.test_metrics.compute())
 
     def configure_optimizers(self):
         decay = set()

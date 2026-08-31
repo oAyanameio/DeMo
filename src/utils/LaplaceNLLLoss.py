@@ -36,7 +36,8 @@ class LaplaceNLLLoss(Metric):
         out_mu = predictions['traj']  
         out_sigma = predictions['scale']  
         gt = ground_truth  
-        y = gt.repeat(6, 1, 1, 1).transpose(0, 1)
+        num_modes = out_mu.size(1)
+        y = gt.unsqueeze(1).expand(-1, num_modes, -1, -1)
         
         out_pi = predictions['probs']  
         pred = torch.cat((out_mu, out_sigma), dim=-1)  

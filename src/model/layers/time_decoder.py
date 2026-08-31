@@ -71,8 +71,9 @@ class GMMPredictor(nn.Module):
     
 
 class TimeDecoder(nn.Module):
-    def __init__(self, future_len=60, dim=128):
+    def __init__(self, future_len=60, dim=128, num_modes=6):
         super(TimeDecoder, self).__init__()
+        self.num_modes = num_modes
 
         ###### State Consistency Module ######
         # state cross attention
@@ -123,8 +124,8 @@ class TimeDecoder(nn.Module):
         )
 
         # mode query initialization
-        self.multi_modal_query_embedding = nn.Embedding(6, dim)
-        self.register_buffer('modal', torch.arange(6).long())
+        self.multi_modal_query_embedding = nn.Embedding(num_modes, dim)
+        self.register_buffer('modal', torch.arange(num_modes).long())
 
         # MLP for mode query
         self.predictor = GMMPredictor(future_len)
