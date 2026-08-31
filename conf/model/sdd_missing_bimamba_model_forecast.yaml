@@ -1,0 +1,24 @@
+name: sdd_missing_bimamba
+phase: actor-only
+
+target:
+  _target_: src.model.trainer_forecast.Trainer
+  model:
+    type: 'ModelForecast'
+    embed_dim: 128
+    future_steps: 12
+    num_heads: 8
+    mlp_ratio: 4.0
+    qkv_bias: False
+    drop_path: 0.2
+    use_map: False
+    num_actor_types: 1
+    num_modes: 20
+    bimamba: true
+    dt: 0.4
+  pretrained_weights: ${pretrained_weights}
+  lr: ${lr}
+  weight_decay: ${weight_decay}
+  epochs: ${epochs}
+  warmup_epochs: ${warmup_epochs}
+  submission_type: ethucy

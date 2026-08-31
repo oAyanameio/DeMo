@@ -1,0 +1,38 @@
+defaults:
+  - datamodule: ethucy_benchmark
+  - model: ethucy_benchmark_bimamba_model_forecast
+
+hydra:
+  run:
+    dir: outputs/${output}/${now:%Y%m%d-%H%M%S}
+
+seed: 2024
+fold: ETH
+monitor: val_minFDE6
+save_top_k: 1
+
+data_root: data/ETHUCY_benchmark_v1
+checkpoint:
+pretrained_weights:
+output: ethucy_bimamba_fold-${fold}_test-${test}
+
+# trainer
+num_workers: 4
+gpus: 1
+sync_bn: false
+batch_size: 64
+epochs: 100
+warmup_epochs: 5
+precision: bf16
+
+# optimizer
+lr: 0.001
+weight_decay: 0.0001
+gradient_clip_val: 5
+gradient_clip_algorithm: norm
+
+limit_train_batches:
+limit_val_batches:
+limit_test_batches:
+log_model: all
+test: false
