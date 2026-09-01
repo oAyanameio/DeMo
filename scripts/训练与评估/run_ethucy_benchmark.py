@@ -98,7 +98,7 @@ def run_fold(fold, args):
         f"--config-name={args.config_name} fold={fold} test=true "
         f"data_root={args.data_root} "
         f"precision={args.precision} checkpoint='{ckpt}' "
-        f"hydra.run.dir={out_dir}/eval > /dev/null 2>&1",
+        f"hydra.run.dir={out_dir}/eval",
         eval_log,
     )
     eval_seconds = time.time() - t0

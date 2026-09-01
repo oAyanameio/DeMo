@@ -11,6 +11,8 @@
 
 注意事项：
 
+- 第二轮高缺失条件（37.5%、50%、连续缺 4 帧和连续缺 6 帧）的协议见 `docs/research/ETHUCY与SDD第二轮高缺失历史实验方案.md`；当前 `build_missing_history_dataset.py` 和 Dataset 仍只支持 v1 的三个 condition，本轮仅完成文档设计。
+
 - checkpoint 文件名含 `=`（如 `epoch=73.ckpt`）时，Hydra override 必须整体加引号：`"checkpoint='outputs/.../epoch=73.ckpt'"`。
 - eval 输出目录已存在 `model.log` 会 FileExistsError，重跑前先删整个 eval 目录。
 - 带 `=` 的路径也可用 `run_heldout_test.py` 的 symlink 方案规避。
