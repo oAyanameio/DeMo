@@ -1,8 +1,8 @@
 # ETH/UCY 与 SDD 第二轮高缺失历史实验方案
 
-_研究实验数据协议 · 适配 DeMo actor-only、无地图模型 · missing_history_v2_high · 2026-08-31_
+_研究实验数据协议 · 适配 DeMo actor-only、无地图模型 · missing_history_v2_high · 2026-09-01_
 
-> **状态（2026-08-31 更新）：数据已生成并通过全量审计。** §8 步骤 1–4 已完成——掩码生成器、审计脚本、SDD reader 均已扩展；`data/ETHUCY_missing_v2_high/`（5 条件 × 181,542 样本）与 `data/SDD_missing_v2_high/`（5 条件 × 11,814 样本）已构建，`--full` 全量审计 0 失败（ETH 6,353,979 项 / SDD 413,500 项），模型接口冒烟 10/10 通过。审计记录见 [缺失历史数据集 v2 高缺失审计](../audits/缺失历史数据集v2高缺失审计.md)。步骤 5 已于 2026-09-01 启动：零样本臂（§6.2，v1 complete ckpt × uni/bi × 5 条件）与训练期适应臂（§6.1，5 条件 × uni/bi，GPU0=单向链 / GPU3=零样本+双向链）后台运行中；complete 基线复用第一轮 v1 结果（数据一致、协议相同）。
+> **状态（2026-09-01 更新）：数据已生成并通过全量审计。** §8 步骤 1–4 已完成——掩码生成器、审计脚本、SDD reader 均已扩展；`data/ETHUCY_missing_v2_high/`（5 条件 × 181,542 样本）与 `data/SDD_missing_v2_high/`（5 条件 × 11,814 样本）已构建，`--full` 全量审计 0 失败（ETH 6,353,979 项 / SDD 413,500 项），模型接口冒烟 10/10 通过。审计记录见 [缺失历史数据集 v2 高缺失审计](../audits/缺失历史数据集v2高缺失审计.md)。步骤 5 已于 2026-09-01 启动：零样本臂（§6.2，v1 complete ckpt × uni/bi × 5 条件）与训练期适应臂（§6.1，5 条件 × uni/bi，GPU0=单向链 / GPU3=零样本+双向链）后台运行中；complete 基线复用第一轮 v1 结果（数据一致、协议相同）。
 
 ## 1. 目标与边界
 
@@ -19,7 +19,7 @@ _研究实验数据协议 · 适配 DeMo actor-only、无地图模型 · missing
 - ETH/UCY 保留多行人轨迹和社会交互，SDD 继续作为单行人外部验证；
 - 继续使用当前 DeMo 的局部坐标和 actor-only 接口；
 - v1 数据集、v1 掩码和第一轮结果保持不变，不覆盖、不重写；
-- 新条件建议使用独立输出根目录 `data/ETHUCY_missing_v2_high/` 和 `data/SDD_missing_v2_high/`。
+- 新条件使用独立输出根目录 `data/ETHUCY_missing_v2_high/` 和 `data/SDD_missing_v2_high/`。
 
 本轮的主变量是**缺失帧数和连续性**。模型结构、数据切分、未来目标和评测口径应保持一致。
 
@@ -120,7 +120,7 @@ dataset|fold|split|scene_id|source_index|source_file|focal_id|condition|mask_see
 
 从已修复并通过审计的 `data/ETHUCY_benchmark_v1/` 读取，不重新切分、不混合 fold、不使用旧的 overwritten benchmark。每个新 condition 保持 5 个 leave-one-out fold，以及各 fold 的 train、val、test 划分。
 
-新数据建议单独保存为：
+已生成数据目录为：
 
 ```text
 data/ETHUCY_missing_v2_high/
@@ -138,7 +138,7 @@ v1 的 `complete`、`random_single`、`random_block2` 继续使用已审计的 `
 
 从当前 `data/sdd/original/sdd_train.pkl` 和 `sdd_test.pkl` 读取，沿用 `split_seed=2024` 的 train/val 划分和原始 test。每条样本仍为单行人 `A=1`，新条件只改变该行人的历史 8 帧掩码。
 
-新数据建议单独保存为：
+已生成数据目录为：
 
 ```text
 data/SDD_missing_v2_high/
@@ -261,15 +261,15 @@ ETH/UCY 继续按 5 个 held-out fold 分别报告并计算宏平均；SDD 继�
 
 ## 8. 实现边界与后续顺序
 
-本次只写文档，后续按以下顺序执行：
+本轮实现与实验执行状态如下：
 
-1. 扩展缺失掩码生成器，使其支持 `random_fixed3`、`random_fixed4`、`random_block3`、`random_block4` 和 `random_block6`；
-2. 为 ETH/UCY 和 SDD 新建独立 v2 输出根目录，不覆盖 v1；
-3. 扩展审计脚本的 condition 解析和连续块检查；
-4. 完成新数据集的结构、掩码、未来一致性和模型接口审计；
-5. 审计通过后再按第 6 节执行训练和零样本评估。
+1. 缺失掩码生成器已支持 `random_fixed3`、`random_fixed4`、`random_block3`、`random_block4` 和 `random_block6`；
+2. ETH/UCY 和 SDD 的独立 v2 输出根目录已生成，且未覆盖 v1；
+3. 审计脚本已支持 v1 / v2_high 的 condition 解析和连续块检查；
+4. 新数据集已完成结构、掩码、未来一致性和模型接口审计；
+5. 训练期适应和零样本评估已于 2026-09-01 启动，结果尚未汇总。
 
-在第 1–4 步完成前，不得把新 condition 写入训练命令或把其结果写入第一轮结果表。当前 v1 的数据和结果仍是已完成实验的唯一结果来源。
+当前可以按第 6 节继续执行第二轮实验，但不得把尚未完成的训练结果写成结论。v1 的数据和第一阶段结果仍保持独立。
 
 ## 9. 与 v1 文档的关系
 

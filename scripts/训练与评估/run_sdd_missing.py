@@ -43,6 +43,7 @@ def main():
     cond = sys.argv[1]
     epochs = sys.argv[2] if len(sys.argv) > 2 else "100"
     data_root = sys.argv[3] if len(sys.argv) > 3 else str(D / "data" / "SDD_missing_v1")
+    num_workers = sys.argv[4] if len(sys.argv) > 4 else "16"
     assert cond in CONDITIONS, f"bad condition: {cond}"
     out_name = f"sdd_missing_{cond}"
     env = dict(os.environ)
@@ -52,6 +53,7 @@ def main():
     p = subprocess.run(
         [PY, "-u", "train.py", f"--config-name={CFG}",
          f"datamodule.target.condition={cond}", f"datamodule.target.data_root={data_root}",
+         f"num_workers={num_workers}",
          f"epochs={epochs}", f"output={out_name}"],
         cwd=D,
         env=env,

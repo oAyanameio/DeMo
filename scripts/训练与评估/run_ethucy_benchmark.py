@@ -64,6 +64,7 @@ def run_fold(fold, args):
             f"data_root={args.data_root} "
             f"epochs={args.epochs} batch_size={args.batch_size} "
             f"seed={args.seed} precision={args.precision} "
+            f"num_workers={args.num_workers} "
             f"output=runs hydra.run.dir={out_dir}/train > /dev/null 2>&1",
             train_log,
         )
@@ -137,6 +138,7 @@ def main():
     ap.add_argument("--gpu", type=int, default=2)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--precision", default="bf16")
+    ap.add_argument("--num-workers", type=int, default=16)
     ap.add_argument("--folds", nargs="+", default=FOLDS)
     ap.add_argument("--skip-train", action="store_true")
     args = ap.parse_args()
