@@ -1,10 +1,7 @@
 #!/bin/bash
-# 第二轮高缺失实验（v2_high）编排 · v2 提速版：同卡多链并行
-# 背景: 单臂 GPU util 仅 ~30%（kernel-launch bound），同卡叠链近线性提速且不改数值
-# 布局(10 臂):
-#   GPU0(余12G, 与常驻 vLLM 共卡): uni 链A(fixed3,fixed4) | 链B(block3,block4) | 链C(block6)
-#   GPU3(余46G): 零样本臂先行 → bi 链A(fixed3,fixed4) | 链B(block3,block4) | 链C(block6)
-# 每臂: SDD(train→best ckpt→held-out test) rc=0 才接 ETH/UCY 五折
+# 第二轮高缺失实验（v2_high）编排 · v3 三卡布局
+# GPU2 释放后的迁移版：GPU0(3链,uni) + GPU2(4链) + GPU3(3链,bi,零样本臂若未完成则在旁继续)
+# 零样本臂由独立脚本管理，本编排启动前检测其是否已完成(60 行)，未完成则顺带补跑
 set -u
 cd /home/lbh/DeMo
 PY=/home/lbh/.conda/envs/DeMo/bin/python
@@ -54,21 +51,32 @@ run_chain () {
     echo "[$(date '+%F %T')] CHAIN_${dirn}_${chain}_DONE" >> "$log"
 }
 
-# ---- GPU0: uni 三链 ----
-run_chain uni 0 A random_fixed3 random_fixed4 &
-run_chain uni 0 B random_block3 random_block4 &
-run_chain uni 0 C random_block6 &
-U_PIDS="$!"
+# 零样本臂：60 行(50 ETH + 10 SDD)即完成；未完成则本编排补跑(幂等覆盖)
+ZS_SUMMARY=outputs/missing_v2_zeroshot_logs/zeroshot_summary.txt
+ZS_LINES=$( [ -f "$ZS_SUMMARY" ] && wc -l < "$ZS_SUMMARY" || echo 0 )
+if [ "$ZS_LINES" -lt 60 ]; then
+    echo "[$(date '+%F %T')] zeroshot incomplete ($ZS_LINES/60), rerunning" >> "$LOG_DIR/zeroshot.log"
+    bash scripts/训练与评估/run_zeroshot_v2.sh 3 >> "$LOG_DIR/zeroshot.log" 2>&1
+    echo "[$(date '+%F %T')] ZEROSHOT_ARM_DONE rc=$?" >> "$LOG_DIR/zeroshot.log"
+else
+    echo "[$(date '+%F %T')] zeroshot already complete ($ZS_LINES/60), skip" >> "$LOG_DIR/zeroshot.log"
+fi &
 
-# ---- GPU3: 零样本先行, bi 三链 ----
-(
-  bash scripts/训练与评估/run_zeroshot_v2.sh 3 >> "$LOG_DIR/zeroshot.log" 2>&1
-  echo "[$(date '+%F %T')] ZEROSHOT_ARM_DONE rc=$?" >> "$LOG_DIR/zeroshot.log"
-) &
-run_chain bi 3 A random_fixed3 random_fixed4 &
-run_chain bi 3 B random_block3 random_block4 &
-run_chain bi 3 C random_block6 &
-B_PIDS="$!"
+# ---- GPU0: uni 3 链 (与常驻 vLLM 共卡) ----
+run_chain uni 0 A random_fixed3 &
+run_chain uni 0 B random_fixed4 &
+run_chain uni 0 C random_block3 &
+
+# ---- GPU2: 4 链 (刚释放的整卡) ----
+run_chain uni 2 D random_block4 &
+run_chain uni 2 E random_block6 &
+run_chain bi  2 A random_fixed3 &
+run_chain bi  2 B random_fixed4 &
+
+# ---- GPU3: bi 3 链 ----
+run_chain bi 3 C random_block3 &
+run_chain bi 3 D random_block4 &
+run_chain bi 3 E random_block6 &
 
 wait
 echo "[$(date '+%F %T')] ROUND2 ALL DONE" >> "$LOG_DIR/orchestrator.log"
