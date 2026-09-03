@@ -75,21 +75,24 @@ def run_fold(fold, args):
         train_seconds = 0.0
 
     run_dir = os.path.join(out_dir, "train")
-    metrics_csv = os.path.join(run_dir, "logs", "version_0", "metrics.csv")
-    if not os.path.exists(metrics_csv):
-        alts = glob.glob(os.path.join(run_dir, "logs", "version_*", "metrics.csv"))
-        assert alts, f"metrics.csv not found under {run_dir}"
-        metrics_csv = sorted(alts)[-1]
-    best = read_best_val(metrics_csv)
+    # 合并所有 version_*/metrics.csv（Lightning 续训会开新 version），best 取全集最小 val
+    all_metrics = sorted(glob.glob(os.path.join(run_dir, "logs", "version_*", "metrics.csv")))
+    assert all_metrics, f"metrics.csv not found under {run_dir}"
+    best = None
+    for metrics_csv in all_metrics:
+        b = read_best_val(metrics_csv)
+        if b is not None and (best is None or b[1] < best[1]):
+            best = b
     assert best is not None, "no val_minFDE6 recorded"
     best_epoch, best_val = best
     ckpt = os.path.join(run_dir, "checkpoints", f"epoch={best_epoch}.ckpt")
     if not os.path.exists(ckpt):
-        # save_top_k=1 -> best checkpoint kept as top file
+        # save_top_k=1 -> best checkpoint kept as top file；续训后旧 best 已被替换，
+        # 用 mtime 最新的非 last checkpoint 兜底
         cands = [c for c in glob.glob(os.path.join(run_dir, "checkpoints", "*.ckpt"))
                  if "last" not in c]
         assert cands, f"no epoch checkpoint for best epoch {best_epoch}"
-        ckpt = cands[0]
+        ckpt = sorted(cands, key=os.path.getmtime)[-1]
         print(f"WARN: epoch={best_epoch}.ckpt missing, using {ckpt}")
 
     t0 = time.time()
@@ -98,7 +101,7 @@ def run_fold(fold, args):
         f"CUDA_VISIBLE_DEVICES={args.gpu} PYTHONPATH=. {PY} eval.py "
         f"--config-name={args.config_name} fold={fold} test=true "
         f"data_root={args.data_root} "
-        f"precision={args.precision} checkpoint='{ckpt}' "
+        f"precision={args.precision} checkpoint=\"'{ckpt}'\" "
         f"hydra.run.dir={out_dir}/eval",
         eval_log,
     )
@@ -111,7 +114,14 @@ def run_fold(fold, args):
     text = open(eval_log).read()
     m = re.search(r"TEST METRICS: (\{.*\})", text)
     assert m, "TEST METRICS not found in eval log"
-    metrics = json.loads(m.group(1).replace("'", '"'))
+    # 值形如 tensor(0.0109, device='cuda:0') 或裸浮点，逐 key 提取数字（json.loads 解析不了 tensor(...)）
+    metrics = {
+        km.group(1): float(km.group(2))
+        for km in re.finditer(r"'(test_[\w\-]+)':\s*(?:tensor\()?\s*([-+0-9.eE]+)", m.group(1))
+    }
+    missing = [k for k in ("test_minADE1", "test_minFDE1", "test_minADE6", "test_minFDE6",
+                           "test_MR", "test_b-minFDE6") if k not in metrics]
+    assert not missing, f"metrics not parsed: {missing}"
     row = {
         "fold": fold,
         "seed": args.seed,
