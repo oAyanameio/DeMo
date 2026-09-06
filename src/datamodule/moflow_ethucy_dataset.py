@@ -191,8 +191,15 @@ class MoFlowEthUcyDataset(Dataset):
 
 
 def moflow_ethucy_collate_fn(batch):
-    """与 ethucy_collate_fn 相同的 padding 逻辑。"""
+    """与 ethucy_collate_fn 相同的 padding 逻辑。
+
+    扩展字段（v3 时间间隔 + missing-aware 特征）为可选：仅当 batch 中
+    所有样本都具有该字段时才 padding；部分样本缺失时抛 ValueError，
+    避免静默生成不一致 batch。MoFlow 原始路径（MoFlowEthUcyDataset /
+    MoFlowSddDataset）不产出这些字段，collate 后 batch 中亦无这些键。
+    """
     data = {}
+    # 基础字段：所有 dataset 路径必须产出，无条件 padding
     for key in [
         "x_positions_diff",
         "x_attr",
@@ -202,6 +209,30 @@ def moflow_ethucy_collate_fn(batch):
         "x_velocity",
         "x_velocity_diff",
     ]:
+        data[key] = pad_sequence([b[key] for b in batch], batch_first=True)
+
+    # 可选扩展字段：全有才 pad；部分有 -> 明确报错
+    _OPTIONAL_EXT_KEYS = [
+        "x_last_valid_angle",
+        "x_last_valid_idx",
+        "x_anchor_lag_steps",
+        "x_forecast_gap_steps",
+        "x_gap_steps",
+        "x_prev_valid_gap",
+        "x_motion_valid",
+        "x_motion_run",
+        "x_missing_summary",
+    ]
+    for key in _OPTIONAL_EXT_KEYS:
+        owners = [i for i, b in enumerate(batch) if key in b]
+        if not owners:
+            continue  # 全部样本都没有：正常跳过
+        if len(owners) != len(batch):
+            raise ValueError(
+                f"moflow_ethucy_collate_fn: optional field '{key}' present in "
+                f"{len(owners)}/{len(batch)} samples (indices {owners}); all "
+                f"samples must provide it consistently or none at all"
+            )
         data[key] = pad_sequence([b[key] for b in batch], batch_first=True)
 
     data["target"] = pad_sequence(

@@ -55,8 +55,19 @@ CONDITION_META = {
     "random_block3": {"k": 3, "contiguous": True, "nominal_rate": 0.375},
     "random_block4": {"k": 4, "contiguous": True, "nominal_rate": 0.5},
     "random_block6": {"k": 6, "contiguous": True, "nominal_rate": 0.75},
+    "random_fixed3_ng": {"k": 3, "contiguous": False, "nominal_rate": 0.375},
+    "random_fixed4_ng": {"k": 4, "contiguous": False, "nominal_rate": 0.5},
+    "random_block3_ng": {"k": 3, "contiguous": True, "nominal_rate": 0.375},
+    "random_block4_ng": {"k": 4, "contiguous": True, "nominal_rate": 0.5},
+    "random_block6_ng": {"k": 6, "contiguous": True, "nominal_rate": 0.75},
+    "uniform_hard_ng":  {"k": None, "contiguous": False, "nominal_rate": 0.6875},
 }
-KNOWN_VERSIONS = ["missing_history_v1", "missing_history_v2_high"]
+KNOWN_VERSIONS = ["missing_history_v1", "missing_history_v2_high", "missing_history_v3_noguard"]
+V3_NG_CONDITIONS = {
+    "random_fixed3_ng", "random_fixed4_ng",
+    "random_block3_ng", "random_block4_ng", "random_block6_ng",
+    "uniform_hard_ng",
+}
 
 
 class Audit:
@@ -112,6 +123,36 @@ def expected_mask(dataset, fold, split, scene_id, source_index, source_file, foc
             mask[a, s:s + m] = False
     elif condition == "random_block6":
         mask[:, :6] = False
+    elif condition in V3_NG_CONDITIONS:
+        # v3_noguard 独立重推（与 build 端相同的确定性规则，但独立实现交叉验证）
+        for a in range(num_agents):
+            need = True
+            k = 0
+            while need and k < 64:
+                akey = key + f"|a{a}" + (f"|retry{k}" if k else "")
+                arng = np.random.default_rng(mask_seed_from(akey))
+                if condition == "uniform_hard_ng":
+                    m = 4 + int(arng.integers(0, 4))
+                    if m <= 7:
+                        ts = arng.choice(8, size=m, replace=False)
+                        mask[a, torch.as_tensor(ts, dtype=torch.long)] = False
+                        need = False
+                elif condition in ("random_fixed3_ng", "random_fixed4_ng"):
+                    kk = int(condition[len("random_fixed")])
+                    if kk <= 7:
+                        ts = arng.choice(8, size=kk, replace=False)
+                        mask[a, torch.as_tensor(ts, dtype=torch.long)] = False
+                        need = False
+                else:
+                    mm = int(condition[len("random_block")])
+                    s0 = int(arng.integers(0, 8 - mm + 1))
+                    if s0 + mm <= 8:
+                        mask[a, s0:s0 + mm] = False
+                        need = False
+                k += 1
+            if need:
+                raise RuntimeError(f"v3 mask re-derive exhausted: {key} a={a}")
+        return mask  # v3：无帧 6/7 强制可见，直接返回
     else:
         raise ValueError(f"unknown condition: {condition}")
     mask[:, 6] = True
@@ -130,6 +171,23 @@ def check_condition_semantics(hm: torch.Tensor, condition: str):
     meta = CONDITION_META[condition]
     k = meta["k"]
     inv = ~hm
+    if condition == "uniform_hard_ng":
+        # v3：m ∈ {4,5,6,7} 且每 actor ≥1 可见帧
+        ms = inv.sum(1)
+        ok = bool(((ms >= 4) & (ms <= 7)).all())
+        return ok and bool(hm.any(dim=1).all())
+    if condition.endswith("_ng"):
+        # v3：帧数恰 k，连续条件起点可为 0..7-m，每 actor ≥1 可见帧
+        ok = bool((inv.sum(1) == k).all())
+        if ok and meta["contiguous"]:
+            for row in inv:
+                idx = row.nonzero().flatten().tolist()
+                if k == 0:
+                    break
+                if idx != list(range(idx[0], idx[0] + k)):
+                    ok = False
+                    break
+        return ok and bool(hm.any(dim=1).all())
     ok = bool((inv.sum(1) == k).all())
     ok = ok and bool(hm[:, 6].all()) and bool(hm[:, 7].all())
     if ok and meta["contiguous"]:
@@ -171,6 +229,22 @@ def check_sample(audit, d, dataset, condition, fold, split, scene_dir_name, rel_
             audit.add("10.3 泄漏", f"未来帧与源一致 {rel_path}", ok_fut)
             ok_vis = torch.equal(d["positions"][:, :8][hm], src["positions"][:, :8][hm])
             audit.add("10.3 泄漏", f"可见历史与源一致 {rel_path}", ok_vis)
+
+    # v3 三字段校验（v1/v2 样本无该字段，跳过）
+    if "last_valid_idx" in d:
+        hm_idx = d["last_valid_idx"]
+        recomputed = torch.full_like(hm_idx, -1)
+        for a in range(A):
+            idxs = torch.nonzero(hm[a]).flatten()
+            if len(idxs):
+                recomputed[a] = int(idxs[-1].item())
+        ok_lvi = torch.equal(hm_idx, recomputed)
+        audit.add("10.2 掩码", f"last_valid_idx 一致 {rel_path}", ok_lvi)
+        ok_gap = (torch.equal(d["anchor_lag_steps"], (7 - hm_idx).clamp(min=0))
+                  and torch.equal(d["forecast_gap_steps"], (8 - hm_idx).clamp(min=1)))
+        audit.add("10.2 掩码", f"anchor_lag/forecast_gap 一致 {rel_path}", ok_gap)
+        ok_min1 = bool(hm.any(dim=1).all())
+        audit.add("10.2 掩码", f"每 actor >=1 可见帧 {rel_path}", ok_min1)
 
     # 掩码确定性复推
     exp = expected_mask(dataset, fold if dataset == "ethucy" else None, split,
@@ -243,7 +317,8 @@ def audit_ethucy(data_root, source_root, full=False, sample_frac=0.02, seed=0, c
                     if got != node["samples"]:
                         ok_mc = False
                     nom = CONDITION_META[cond]["nominal_rate"]
-                    if node["history_frames_total"] and abs(node["actual_missing_rate"] - nom) > 5e-7:
+                    tol = 0.01 if cond in V3_NG_CONDITIONS else 5e-7
+                    if node["history_frames_total"] and abs(node["actual_missing_rate"] - nom) > tol:
                         ok_rate = False
                         print(f"  [FAIL] nominal rate {cond} fold_{fold}/{split}: "
                               f"actual {node['actual_missing_rate']} != nominal {nom}", flush=True)
@@ -390,7 +465,8 @@ def audit_sdd(data_root, source_root, full=False, sample_frac=0.02, seed=0, cond
                 if got != node["samples"]:
                     ok_mc = False
                 nom = CONDITION_META[cond]["nominal_rate"]
-                if node["history_frames_total"] and abs(node["actual_missing_rate"] - nom) > 5e-7:
+                tol = 0.01 if cond in V3_NG_CONDITIONS else 5e-7
+                if node["history_frames_total"] and abs(node["actual_missing_rate"] - nom) > tol:
                     ok_rate = False
                     print(f"  [FAIL] nominal rate {cond}/{split}: actual {node['actual_missing_rate']} != {nom}", flush=True)
         audit.add("10.1 结构", "manifest 计数与磁盘一致", ok_mc)

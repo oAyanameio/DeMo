@@ -12,6 +12,8 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
+from .missing_features import build_missing_features
+
 
 def compute_theta(hist_pos: torch.Tensor, hist_valid: torch.Tensor, eps: float = 1e-4):
     """从 focal 历史末尾寻找最近的有效非零位移确定朝向。返回 (theta, degenerate).
@@ -64,8 +66,13 @@ class EthUcyBenchmarkDataset(Dataset):
         valid_mask = valid_mask[perm]
         agent_ids = agent_ids[perm]
 
-        origin = positions[0, obs_len - 1].clone()
-        theta, degenerate = compute_theta(positions[0, :obs_len], valid_mask[0, :obs_len])
+        # v3_noguard：focal 原点 = focal 最后可见历史位置（帧 7 可能缺失）；
+        # v1/v2 下最后可见帧恒为 7，与旧版 positions[0, obs_len-1] 完全一致。
+        focal_hist_valid = valid_mask[0, :obs_len]
+        _fv = torch.nonzero(focal_hist_valid).flatten()
+        focal_last = int(_fv[-1].item()) if len(_fv) else obs_len - 1
+        origin = positions[0, focal_last].clone()
+        theta, degenerate = compute_theta(positions[0, :obs_len], focal_hist_valid)
 
         # local transform (all actors are complete in strict mode)
         cos_t, sin_t = torch.cos(theta).item(), torch.sin(theta).item()
@@ -100,15 +107,39 @@ class EthUcyBenchmarkDataset(Dataset):
             last_valid_idx.append(idxs[-1].item() if len(idxs) else obs_len - 1)
         x_centers = torch.stack([hist_pos[i, last_valid_idx[i]] for i in range(N)])
         # x_angles：涉及缺失帧的相邻步方向置零（missing_history_v1 §5.3）；
-        # 模型 forward 只用 x_angles[..., -1]（帧 7←6，恒有效），不受影响
+        # v3：帧 7 缺失时 x_angles[..., -1] 不再是有效朝向——模型改用
+        # x_last_valid_angle（每 actor 最近有效运动对朝向，见 forward）；
+        # v1/v2 下 x_last_valid_angle == x_angles[..., 7]，数值不变。
         x_angles = torch.zeros(N, obs_len)
         for t in range(1, obs_len):
             d = hist_pos[:, t] - hist_pos[:, t - 1]
             ang = torch.atan2(d[:, 1], d[:, 0])
             x_angles[:, t] = torch.where(diff_mask[:, t - 1], ang, torch.zeros_like(ang))
         x_angles[:, 0] = x_angles[:, 1]
+        # 每 actor 最近有效朝向：从末帧向前找第一个 diff_mask 有效步；无则 0（单帧可见/静止）
+        x_last_valid_angle = torch.zeros(N)
+        for i in range(N):
+            for t in range(obs_len - 1, 0, -1):
+                if bool(diff_mask[i, t - 1]) and torch.norm(hist_pos[i, t] - hist_pos[i, t - 1]) >= 1e-4:
+                    x_last_valid_angle[i] = torch.atan2(
+                        hist_pos[i, t][1] - hist_pos[i, t - 1][1],
+                        hist_pos[i, t][0] - hist_pos[i, t - 1][0])
+                    break
 
         x_attr = torch.zeros(N, 3, dtype=torch.uint8)  # type 0 = pedestrian
+
+        # 逐 actor 时间间隔字段（v3 §5.1.2；v1/v2 数据无该字段时按掩码现算，恒 0/1）
+        x_last_valid_idx = torch.tensor(last_valid_idx, dtype=torch.long)
+        x_anchor_lag = (7 - x_last_valid_idx).clamp(min=0)
+        x_forecast_gap = (8 - x_last_valid_idx).clamp(min=1)
+
+        # 缺失感知特征（方案 §2.3/§2.4，任务 2）：仅由 hist_valid 掩码派生
+        miss = build_missing_features(hist_valid)
+        x_gap_steps = miss["gap_steps"]
+        x_prev_valid_gap = miss["prev_valid_gap"]
+        x_motion_valid = miss["motion_valid"]
+        x_motion_run = miss["motion_run"]
+        x_missing_summary = miss["missing_summary"]
 
         # target
         target = future_pos.clone()
@@ -140,6 +171,15 @@ class EthUcyBenchmarkDataset(Dataset):
             "x_velocity_diff": x_velocity_diff,
             "x_valid_mask": hist_valid,
             "x_key_valid_mask": hist_valid.any(-1),
+            "x_last_valid_angle": x_last_valid_angle,
+            "x_last_valid_idx": x_last_valid_idx,
+            "x_anchor_lag_steps": x_anchor_lag,
+            "x_forecast_gap_steps": x_forecast_gap,
+            "x_gap_steps": x_gap_steps,
+            "x_prev_valid_gap": x_prev_valid_gap,
+            "x_motion_valid": x_motion_valid,
+            "x_motion_run": x_motion_run,
+            "x_missing_summary": x_missing_summary,
             "origin": origin.view(1, 2),
             "theta": theta.view(1),
             "degenerate_heading": degenerate,
@@ -154,6 +194,10 @@ def ethucy_benchmark_collate_fn(batch):
     for key in [
         "x_positions_diff", "x_attr", "x_positions", "x_centers",
         "x_angles", "x_velocity", "x_velocity_diff",
+        "x_last_valid_angle", "x_last_valid_idx",
+        "x_anchor_lag_steps", "x_forecast_gap_steps",
+        "x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run",
+        "x_missing_summary",
     ]:
         data[key] = pad_sequence([b[key] for b in batch], batch_first=True)
     for key in ["target", "target_diff", "target_vel_diff"]:

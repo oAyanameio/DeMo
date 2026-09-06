@@ -18,6 +18,7 @@ import torch
 from torch.utils.data import Dataset
 
 from .ethucy_utils import compute_focal_rotation, transform_to_local
+from .missing_features import build_missing_features
 
 
 class SddMissingDataset(Dataset):
@@ -30,11 +31,14 @@ class SddMissingDataset(Dataset):
         pred_len: int = 12,
     ) -> None:
         super().__init__()
-        # v1 + v2_high 全部条件（数据格式相同，仅掩码不同；v2 高缺失数据
-        # 位于 data/SDD_missing_v2_high/<condition>/，data_root 指过去即可）
+        # v1 + v2_high + v3_noguard 全部条件（数据格式相同，仅掩码不同；
+        # v2/v3 数据位于 data/SDD_missing_v2_high|v3_noguard/<condition>/）
         _KNOWN = ("complete", "random_single", "random_block2",
                   "random_fixed3", "random_fixed4", "random_fixed5",
-                  "random_block3", "random_block4", "random_block6")
+                  "random_block3", "random_block4", "random_block6",
+                  "random_fixed3_ng", "random_fixed4_ng",
+                  "random_block3_ng", "random_block4_ng", "random_block6_ng",
+                  "uniform_hard_ng")
         assert condition in _KNOWN, condition
         assert split in ("train", "val", "test"), split
         self.data_root = Path(data_root)
@@ -70,11 +74,19 @@ class SddMissingDataset(Dataset):
         pred_len = self.pred_len
         N = positions.size(0)
 
-        # focal 局部坐标系：帧 7、6 在 v1 下恒可见，锚定稳定
-        origin = positions[0, obs_len - 1].clone()
-        theta = compute_focal_rotation(
-            positions[0, obs_len - 1], positions[0, obs_len - 2]
-        )
+        # focal 局部坐标系：v1/v2 帧帧7恒可见；v3_noguard 下回退到最后可见帧，
+        # 旋转角从最近的有效非零位移对回溯（无有效对则 theta=0）
+        hist_valid_f = valid_mask[0, :obs_len]
+        _fv = torch.nonzero(hist_valid_f).flatten()
+        focal_last = int(_fv[-1].item()) if len(_fv) else obs_len - 1
+        origin = positions[0, focal_last].clone()
+        theta = torch.tensor(0.0)
+        for t in range(obs_len - 1, 0, -1):
+            if bool(valid_mask[0, t]) and bool(valid_mask[0, t - 1]):
+                d = positions[0, t] - positions[0, t - 1]
+                if torch.norm(d) >= 1e-4:
+                    theta = torch.atan2(d[1], d[0])
+                    break
         positions_local = transform_to_local(positions, valid_mask, origin, theta)
 
         hist_pos = positions_local[:, :obs_len]
@@ -99,8 +111,30 @@ class SddMissingDataset(Dataset):
         both_steps = diff_mask[:, 1:] & diff_mask[:, :-1]  # [N, obs_len-2]
         x_velocity_diff[:, 2:] = x_velocity_diff[:, 2:] * both_steps.float()
 
-        # v1：帧 6/7 恒可见，x_centers=帧 7 位置（= 最后有效帧）
-        x_centers = hist_pos[:, obs_len - 1].clone()
+        # 每 actor 最后可见历史位置（v1/v2 下恒为帧 7，与旧版一致）
+        last_valid_idx = []
+        for i in range(N):
+            idxs = torch.nonzero(hist_valid[i]).flatten()
+            last_valid_idx.append(int(idxs[-1].item()) if len(idxs) else obs_len - 1)
+        x_centers = torch.stack([hist_pos[i, last_valid_idx[i]] for i in range(N)])
+
+        # 每 actor 最近有效运动对朝向（无则 0：单帧可见/静止）；v1/v2 下 == x_angles[...,7]
+        x_last_valid_angle = torch.zeros(N)
+        for i in range(N):
+            for t in range(obs_len - 1, 0, -1):
+                if bool(diff_mask[i, t - 1]) and torch.norm(hist_pos[i, t] - hist_pos[i, t - 1]) >= 1e-4:
+                    x_last_valid_angle[i] = torch.atan2(
+                        hist_pos[i, t][1] - hist_pos[i, t - 1][1],
+                        hist_pos[i, t][0] - hist_pos[i, t - 1][0])
+                    break
+
+        x_last_valid_idx = torch.tensor(last_valid_idx, dtype=torch.long)
+        x_anchor_lag = (7 - x_last_valid_idx).clamp(min=0)
+        x_forecast_gap = (8 - x_last_valid_idx).clamp(min=1)
+
+        # 缺失感知特征（方案 §2.3/§2.4，任务 2）：仅由 hist_valid 掩码派生，
+        # 与 ETH/UCY benchmark 路径同语义
+        miss = build_missing_features(hist_valid)
 
         # x_angles：涉及缺失帧的方向置零；模型只用 x_angles[..., -1]（恒有效）
         x_angles = torch.zeros(N, obs_len)
@@ -147,6 +181,15 @@ class SddMissingDataset(Dataset):
             "x_velocity_diff": x_velocity_diff,
             "x_valid_mask": hist_valid,
             "x_key_valid_mask": hist_valid.any(-1),
+            "x_last_valid_angle": x_last_valid_angle,
+            "x_last_valid_idx": x_last_valid_idx,
+            "x_anchor_lag_steps": x_anchor_lag,
+            "x_forecast_gap_steps": x_forecast_gap,
+            "x_gap_steps": miss["gap_steps"],
+            "x_prev_valid_gap": miss["prev_valid_gap"],
+            "x_motion_valid": miss["motion_valid"],
+            "x_motion_run": miss["motion_run"],
+            "x_missing_summary": miss["missing_summary"],
             "origin": origin.view(1, 2),
             "theta": theta.view(1),
             "scene_id": "SDD",

@@ -57,7 +57,16 @@ CONDITIONS = [
     "complete", "random_single", "random_block2",                    # v1
     "random_fixed3", "random_fixed4", "random_fixed5",               # v2_high 随机缺失
     "random_block3", "random_block4", "random_block6",               # v2_high 连续缺失
+    "random_fixed3_ng", "random_fixed4_ng",                          # v3_noguard 随机缺失
+    "random_block3_ng", "random_block4_ng", "random_block6_ng",      # v3_noguard 连续缺失
+    "uniform_hard_ng",                                                # v3_noguard TrajImpute hard 对齐
 ]
+# v3_noguard：无保护条件（候选帧 0..7，每 actor ≥1 可见帧；见第二轮方案 §5.1）
+V3_CONDITIONS = {
+    "random_fixed3_ng", "random_fixed4_ng",
+    "random_block3_ng", "random_block4_ng", "random_block6_ng",
+    "uniform_hard_ng",
+}
 # 每个条件的名义缺失帧数 / 缺失率 / 掩码规则（写入 manifest，方案 §2.2 / §7.3）
 CONDITION_SPECS = {
     "complete":      {"missing_frames": 0, "nominal_rate": 0.0,   "rule": "all_visible"},
@@ -69,6 +78,12 @@ CONDITION_SPECS = {
     "random_block3": {"missing_frames": 3, "nominal_rate": 0.375, "rule": "contiguous_block3_start_0-3"},
     "random_block4": {"missing_frames": 4, "nominal_rate": 0.5,   "rule": "contiguous_block4_start_0-2"},
     "random_block6": {"missing_frames": 6, "nominal_rate": 0.75,  "rule": "fixed_block_0-5"},
+    "random_fixed3_ng": {"missing_frames": 3, "nominal_rate": 0.375, "rule": "random_3_distinct_of_0-7_noguard"},
+    "random_fixed4_ng": {"missing_frames": 4, "nominal_rate": 0.5,   "rule": "random_4_distinct_of_0-7_noguard"},
+    "random_block3_ng": {"missing_frames": 3, "nominal_rate": 0.375, "rule": "contiguous_block3_start_0-5_noguard"},
+    "random_block4_ng": {"missing_frames": 4, "nominal_rate": 0.5,   "rule": "contiguous_block4_start_0-4_noguard"},
+    "random_block6_ng": {"missing_frames": 6, "nominal_rate": 0.75,  "rule": "contiguous_block6_start_0-2_noguard"},
+    "uniform_hard_ng":  {"missing_frames": "4-7", "nominal_rate": 0.6875, "rule": "m~Uniform{4,5,6,7}_then_m_distinct_of_0-7_noguard"},
 }
 
 
@@ -105,6 +120,59 @@ def derive_history_mask(
     )
     rng = np.random.default_rng(mask_seed_from(key))
     mask = torch.ones(num_agents, OBS_LEN, dtype=torch.bool)
+
+    if condition in V3_CONDITIONS:
+        # ---- v3_noguard：候选帧 0..7，无帧 6/7 保护，每 actor ≥1 可见帧 ----
+        # 若某 actor 掩码全 False，以 key+"|retry{k}" 重派生 rng 重抽（确定性，方案 §5.1.4）
+        for a in range(num_agents):
+            if condition == "uniform_hard_ng":
+                # m ~ Uniform{4,5,6,7}，再无放回抽 m 帧（TrajImpute hard 档对齐）
+                need_retry = True
+                for k in range(0, 64):
+                    rng_a = (np.random.default_rng(mask_seed_from(key + f"|a{a}"))
+                             if k == 0 else
+                             np.random.default_rng(mask_seed_from(key + f"|a{a}|retry{k}")))
+                    m = 4 + int(rng_a.integers(0, 4))
+                    if m <= OBS_LEN - 1:  # m<=7 保证 ≥1 可见帧
+                        ts = rng_a.choice(OBS_LEN, size=m, replace=False)
+                        mask[a, ts.long() if hasattr(ts, "long") else torch.as_tensor(ts, dtype=torch.long)] = False
+                        need_retry = False
+                        break
+                if need_retry:
+                    raise RuntimeError(f"uniform_hard_ng mask retry exhausted: {key}")
+            elif condition in ("random_fixed3_ng", "random_fixed4_ng"):
+                k_n = int(condition[len("random_fixed")])
+                need_retry = True
+                for k in range(0, 64):
+                    rng_a = (np.random.default_rng(mask_seed_from(key + f"|a{a}"))
+                             if k == 0 else
+                             np.random.default_rng(mask_seed_from(key + f"|a{a}|retry{k}")))
+                    ts = rng_a.choice(OBS_LEN, size=k_n, replace=False)
+                    if k_n <= OBS_LEN - 1:
+                        mask[a, torch.as_tensor(ts, dtype=torch.long)] = False
+                        need_retry = False
+                        break
+                if need_retry:
+                    raise RuntimeError(f"{condition} mask retry exhausted: {key}")
+            else:
+                # 连续块：block3 s∈0..5 / block4 s∈0..4 / block6 s∈0..2
+                m = int(condition[len("random_block")])
+                s_hi = OBS_LEN - m  # 保证块尾 <=7
+                need_retry = True
+                for k in range(0, 64):
+                    rng_a = (np.random.default_rng(mask_seed_from(key + f"|a{a}"))
+                             if k == 0 else
+                             np.random.default_rng(mask_seed_from(key + f"|a{a}|retry{k}")))
+                    s = int(rng_a.integers(0, s_hi + 1))
+                    if s + m <= OBS_LEN:  # 连续块必满足 m<=7，恒有可见帧
+                        mask[a, s:s + m] = False
+                        need_retry = False
+                        break
+                if need_retry:
+                    raise RuntimeError(f"{condition} mask retry exhausted: {key}")
+        # v3 无帧 6/7 强制可见；每 actor 至少 1 可见帧已由构造保证（m<=7 / 连续块 m<=7）
+        return mask
+
     if condition == "random_single":
         # 每个行人独立随机缺失 1 帧（从 0-5 中抽）
         for a in range(num_agents):
@@ -141,7 +209,12 @@ def derive_history_mask(
 
 
 def apply_mask_to_sample(sample: dict, history_mask: torch.Tensor) -> dict:
-    """将历史掩码应用到 canonical 样本：缺失处置 0.0，重写 valid_mask。"""
+    """将历史掩码应用到 canonical 样本：缺失处置 0.0，重写 valid_mask。
+
+    v3_noguard：额外写入逐 actor 的 last_valid_idx / anchor_lag_steps / forecast_gap_steps
+    （方案 §5.1.2/5.1.4）。v1/v2 条件下三字段同样写入（anchor_lag 恒 0、
+    forecast_gap 恒 1），字段集统一，读取端无需分版本分支。
+    """
     positions = sample["positions"].clone()
     valid_mask = sample["valid_mask"].clone()
     positions[:, :OBS_LEN] = positions[:, :OBS_LEN] * history_mask.unsqueeze(-1).float()
@@ -151,6 +224,17 @@ def apply_mask_to_sample(sample: dict, history_mask: torch.Tensor) -> dict:
     out["positions"] = positions
     out["valid_mask"] = valid_mask
     out["history_mask"] = history_mask.clone()
+    # 逐 actor 时间间隔字段：仅 v3_noguard 写入（保持 v1/v2 输出文件逐字节不变；
+    # v1/v2 下 anchor_lag 恒 0 / forecast_gap 恒 1，读取端按缺省处理）
+    if getattr(apply_mask_to_sample, "_v3_mode", False):
+        last_valid_idx = torch.full((history_mask.size(0),), -1, dtype=torch.long)
+        for a in range(history_mask.size(0)):
+            idxs = torch.nonzero(history_mask[a]).flatten()
+            if len(idxs):
+                last_valid_idx[a] = int(idxs[-1].item())
+        out["last_valid_idx"] = last_valid_idx
+        out["anchor_lag_steps"] = (7 - last_valid_idx).clamp(min=0)
+        out["forecast_gap_steps"] = (8 - last_valid_idx).clamp(min=1)
     return out
 
 
@@ -184,6 +268,7 @@ def list_ethucy_units(source_root: Path, scenes=None):
 def build_ethucy_unit(args):
     """处理一个 (condition, fold, split, scene) 单元。在子进程中运行。"""
     condition, fold, split, scene, files, source_root, output_root, mask_seed = args
+    apply_mask_to_sample._v3_mode = condition in V3_CONDITIONS
     out_dir = Path(output_root) / condition / f"fold_{fold}" / split / scene
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -192,6 +277,7 @@ def build_ethucy_unit(args):
         "rejected": 0, "reject_reasons": {},
         "source_index_min": None, "source_index_max": None,
         "sha256": [],  # (filename, digest)
+        "m_hist": {},
     }
     for f in files:
         try:
@@ -228,6 +314,10 @@ def build_ethucy_unit(args):
         stats["samples"] += 1
         stats["agents"] += A
         stats["missing_frames"] += int((~hmask).sum())
+        if condition == "uniform_hard_ng":
+            for m, c in zip(*np.unique((~hmask).sum(dim=1).tolist(), return_counts=True)):
+                mk = str(int(m)); cv = int(c)
+                stats.setdefault("m_hist", {})[mk] = stats["m_hist"].get(mk, 0) + cv
         si = source_index
         stats["source_index_min"] = si if stats["source_index_min"] is None else min(stats["source_index_min"], si)
         stats["source_index_max"] = si if stats["source_index_max"] is None else max(stats["source_index_max"], si)
@@ -270,6 +360,8 @@ def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, wo
                 "samples": stats["samples"],
                 "file_digests": dict(stats["sha256"]),
             }
+            if stats.get("m_hist"):
+                md["m_hist"] = {k: md.get("m_hist", {}).get(k, 0) + v for k, v in stats["m_hist"].items()}
             md["source_index_min"] = stats["source_index_min"] if md["source_index_min"] is None else min(md["source_index_min"], stats["source_index_min"])
             md["source_index_max"] = stats["source_index_max"] if md["source_index_max"] is None else max(md["source_index_max"], stats["source_index_max"])
             done += 1
@@ -284,12 +376,12 @@ def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, wo
         "pred_len": PRED_LEN,
         "dt": DT,
         "unit": "meter",
-        "use_map": False,
         "mask_seed": mask_seed,
         "split_seed": None,
         "conditions": conditions,
         "condition_specs": {c: CONDITION_SPECS[c] for c in conditions},
-        "history_visibility_rule": "frames_6_and_7_visible",
+        "history_visibility_rule": ("no_guard_min_1_visible" if version == "missing_history_v3_noguard"
+                                    else "frames_6_and_7_visible"),
         "future_policy": "complete",
         "coordinate_policy": "raw_scene_coordinates",
         "feature_policy": "recompute_from_visible_history",
@@ -311,6 +403,7 @@ def build_ethucy(source_root: Path, output_root: Path, conditions, mask_seed, wo
             "reject_reasons": md["reject_reasons"],
             "scenes": {s: v["samples"] for s, v in md["scenes"].items()},
             "per_file_sha256": {s: v["file_digests"] for s, v in md["scenes"].items()},
+            "m_hist": md.get("m_hist", {}),
         }
     with open(output_root / "manifest.json", "w") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
@@ -336,6 +429,7 @@ def sdd_split_indices(n: int, split_seed: int, val_ratio: float = 0.1):
 def build_sdd_unit(args):
     """处理一个 (condition, split) 单元。在子进程中运行。"""
     condition, split, records, output_root, mask_seed = args
+    apply_mask_to_sample._v3_mode = condition in V3_CONDITIONS
     out_dir = Path(output_root) / condition / split
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -344,6 +438,7 @@ def build_sdd_unit(args):
         "rejected": 0, "reject_reasons": {},
         "source_index_min": None, "source_index_max": None,
         "sha256": {},
+        "m_hist": {},
     }
     for sample_index, (orig_idx, past, fut) in enumerate(records):
         try:
@@ -390,6 +485,10 @@ def build_sdd_unit(args):
         stats["samples"] += 1
         stats["agents"] += 1
         stats["missing_frames"] += int((~hmask).sum())
+        if condition == "uniform_hard_ng":
+            for m, c in zip(*np.unique((~hmask).sum(dim=1).tolist(), return_counts=True)):
+                mk = str(int(m)); cv = int(c)
+                stats.setdefault("m_hist", {})[mk] = stats["m_hist"].get(mk, 0) + cv
         stats["source_index_min"] = int(orig_idx) if stats["source_index_min"] is None else min(stats["source_index_min"], int(orig_idx))
         stats["source_index_max"] = int(orig_idx) if stats["source_index_max"] is None else max(stats["source_index_max"], int(orig_idx))
         h = hashlib.sha256()
@@ -439,6 +538,8 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
             md["source_index_min"] = stats["source_index_min"] if md["source_index_min"] is None else min(md["source_index_min"], stats["source_index_min"])
             md["source_index_max"] = stats["source_index_max"] if md["source_index_max"] is None else max(md["source_index_max"], stats["source_index_max"])
             md["sha256"].update(stats["sha256"])
+            if stats.get("m_hist"):
+                md["m_hist"] = {k: md.get("m_hist", {}).get(k, 0) + v for k, v in stats["m_hist"].items()}
 
     manifest = {
         "version": version,
@@ -447,13 +548,13 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
         "pred_len": PRED_LEN,
         "dt": DT,
         "unit": "pixel",
-        "use_map": False,
         "mask_seed": mask_seed,
         "split_seed": split_seed,
         "val_ratio": 0.1,
         "conditions": conditions,
         "condition_specs": {c: CONDITION_SPECS[c] for c in conditions},
-        "history_visibility_rule": "frames_6_and_7_visible",
+        "history_visibility_rule": ("no_guard_min_1_visible" if version == "missing_history_v3_noguard"
+                                    else "frames_6_and_7_visible"),
         "future_policy": "complete",
         "coordinate_policy": "raw_scene_coordinates",
         "feature_policy": "recompute_from_visible_history",
@@ -473,6 +574,7 @@ def build_sdd(source_root: Path, output_root: Path, conditions, split_seed, mask
             "rejected_samples": md["rejected"],
             "reject_reasons": md["reject_reasons"],
             "per_file_sha256": md["sha256"],
+            "m_hist": md.get("m_hist", {}),
         }
     with open(output_root / "manifest.json", "w") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=1)
@@ -493,13 +595,16 @@ def main():
     ap.add_argument("--folds", nargs="+", default=FOLDS, help="ethucy only: subset of folds")
     ap.add_argument("--scenes", nargs="+", default=None, help="ethucy only: only these scene names (smoke test)")
     ap.add_argument("--version", default="missing_history_v1",
-                    help="manifest version 标签：missing_history_v1 | missing_history_v2_high")
+                    help="manifest version 标签：missing_history_v1 | missing_history_v2_high | missing_history_v3_noguard")
     args = ap.parse_args()
 
     if args.folds != FOLDS:
         # 通过模块级约定传给子进程可见的枚举逻辑：直接改写本模块全局
         globals()["FOLDS"] = args.folds
 
+    if args.version == "missing_history_v3_noguard":
+        bad = [c for c in args.conditions if c not in V3_CONDITIONS]
+        assert not bad, f"v3_noguard 版本只接受 *_ng 条件，得到: {bad}"
     source_root = Path(args.source_root)
     output_root = Path(args.output_root)
     output_root.mkdir(parents=True, exist_ok=True)
