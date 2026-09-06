@@ -1,0 +1,44 @@
+# Missing-Aware SDD 主实验配置（M0 默认）。
+# 协议与 config_sdd_missing_bimamba.yaml 一致；M1/M2 经 override 开启。
+# 注意：SDD 数据根与 condition 由 datamodule.target.* 控制，运行时用
+#   datamodule.target.condition=<cond>  /  datamodule.target.data_root=<root>
+# 覆盖（顶层无同名生效键，防止只改变 output 名不改变数据的错配）。
+defaults:
+  - datamodule: sdd_missing
+  - model: missing_aware_sdd_model_forecast
+
+hydra:
+  run:
+    dir: outputs/${output}/${now:%Y%m%d-%H%M%S}
+
+seed: 2024
+monitor: val_minFDE20
+save_top_k: 3
+
+checkpoint:
+pretrained_weights:
+output: missing_aware_sdd_M${model_version}_cond-${datamodule.target.condition}_test-${test}
+
+# trainer
+num_workers: 4
+gpus: 1
+sync_bn: false
+batch_size: 64
+epochs: 100
+warmup_epochs: 5
+precision: bf16
+
+# optimizer
+lr: 0.001
+weight_decay: 0.0001
+gradient_clip_val: 5
+gradient_clip_algorithm: norm
+
+limit_train_batches:
+limit_val_batches:
+limit_test_batches:
+log_model: all
+test: false
+
+# 模型版本标签（仅用于 output 命名，无功能）：0/1/2 对应 M0/M1/M2
+model_version: '0'

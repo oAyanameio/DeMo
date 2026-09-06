@@ -1,16 +1,25 @@
-name: baseline
-phase: default
+name: missing_aware_sdd
+phase: actor-only
 
 target:
   _target_: src.model.trainer_forecast.Trainer
   model:
     type: 'ModelForecast'
     embed_dim: 128
-    future_steps: 60
+    future_steps: 12
     num_heads: 8
     mlp_ratio: 4.0
     qkv_bias: False
     drop_path: 0.2
+    num_actor_types: 1
+    num_modes: 20
+    bimamba: true
+    dt: 0.4
+    obs_len: 8
+    # M0_base 默认；override 方式同 ETH/UCY 版本
+    use_observation_features: false
+    use_missing_summary: false
+    use_gap_condition: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

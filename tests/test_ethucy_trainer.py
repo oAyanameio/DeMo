@@ -37,13 +37,11 @@ def _make_trainer():
             "type": "ModelForecast",
             "embed_dim": 128,
             "future_steps": 12,
-            "use_map": False,
             "num_actor_types": 1,
         },
         lr=0.001,
         epochs=100,
         warmup_epochs=5,
-        submission_type="ethucy",
     )
     return trainer.to(DEVICE)
 
@@ -53,9 +51,9 @@ class TestTrainerEthUcy:
 
     def test_trainer_init(self):
         trainer = _make_trainer()
-        assert trainer.submission_type == "ethucy"
-        assert trainer.net.use_map is False
         assert trainer.net.future_steps == 12
+        # Trainer 固定使用 SubmissionEthUcy
+        assert type(trainer.submission_handler).__name__ == "SubmissionEthUcy"
 
     def test_training_step_no_nan(self):
         trainer = _make_trainer()

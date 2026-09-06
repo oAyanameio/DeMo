@@ -1,0 +1,43 @@
+# Missing-Aware ETH/UCY 主实验配置（M0 默认）。
+# 协议与 config_ethucy_benchmark_bimamba.yaml 一致；M1/M2 经 override 开启。
+defaults:
+  - datamodule: ethucy_benchmark
+  - model: missing_aware_ethucy_model_forecast
+
+hydra:
+  run:
+    dir: outputs/${output}/${now:%Y%m%d-%H%M%S}
+
+seed: 2024
+fold: ETH
+monitor: val_minFDE6
+save_top_k: 1
+
+data_root: data/ETHUCY_missing_v1
+checkpoint:
+pretrained_weights:
+output: missing_aware_ethucy_M${model_version}_fold-${fold}_test-${test}
+
+# trainer
+num_workers: 4
+gpus: 1
+sync_bn: false
+batch_size: 64
+epochs: 100
+warmup_epochs: 5
+precision: bf16
+
+# optimizer
+lr: 0.001
+weight_decay: 0.0001
+gradient_clip_val: 5
+gradient_clip_algorithm: norm
+
+limit_train_batches:
+limit_val_batches:
+limit_test_batches:
+log_model: all
+test: false
+
+# 模型版本标签（仅用于 output 命名，无功能）：0/1/2 对应 M0/M1/M2
+model_version: '0'

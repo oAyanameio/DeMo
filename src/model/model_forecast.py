@@ -2,8 +2,7 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers.lane_embedding import LaneEmbeddingLayer
-from .layers.transformer_blocks import Block, InteractionBlock
+from .layers.transformer_blocks import Block
 from .layers.time_decoder import TimeDecoder
 from .layers.mamba.vim_mamba import init_weights, create_block
 from functools import partial
@@ -23,22 +22,44 @@ class ModelForecast(nn.Module):
         mlp_ratio=4.0,
         qkv_bias=False,
         drop_path=0.2,
-        future_steps: int = 60,
-        use_map: bool = True,
-        num_actor_types: int = 4,
+        future_steps: int = 12,
+        num_actor_types: int = 1,
         num_modes: int = 6,
         bimamba: bool = False,
-        dt: float = 0.1,
+        dt: float = 0.4,
+        obs_len: int = 8,
+        use_gap_condition: bool = False,
+        use_observation_features: bool = False,
+        use_missing_summary: bool = False,
     ) -> None:
         super().__init__()
+        # v3 缺失感知条件化通路（默认关闭：参数集与既有 checkpoint 完全一致）。
+        # 开启时 focal forecast_gap_steps 经 MLP 融入 time embedding（State Query
+        # 初始化路径），并输出 focal_anchor_lag/forecast_gap 供 Mode Query 与
+        # Hybrid Coupling 的后续条件化消费（选题 §五.3 r_h 通路）。
+        self.use_gap_condition = use_gap_condition
+        if use_gap_condition:
+            self.gap_embed = nn.Sequential(
+                nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
+            )
+
+        # M1_obs（方案 §3.1）：历史输入追加 4 个掩码派生时间步特征
+        # [x_gap_steps/obs_len, x_prev_valid_gap/obs_len, x_motion_valid,
+        #  x_motion_run/(obs_len-1)]，输入维度 4 -> 8。
+        self.use_observation_features = use_observation_features
+        self.obs_len = obs_len
+        hist_input_dim = 4 + (4 if use_observation_features else 0)
+
+        # M2_history（方案 §3.1/§2.6）：x_missing_summary -> embed_dim 条件向量，
+        # 加到历史 actor token（TypeEmbedding 之后、场景编码之前）。
+        self.use_missing_summary = use_missing_summary
 
         self.future_steps = future_steps
-        self.use_map = use_map
         self.dt = dt
         self.num_actor_types = num_actor_types
 
         self.hist_embed_mlp = nn.Sequential(
-            nn.Linear(4, 64),
+            nn.Linear(hist_input_dim, 64),
             nn.GELU(),
             nn.Linear(64, embed_dim),
         )
@@ -58,8 +79,6 @@ class ModelForecast(nn.Module):
         )
         self.norm_f = RMSNorm(embed_dim, eps=1e-5)
         self.drop_path = DropPath(drop_path)
-
-        self.lane_embed = LaneEmbeddingLayer(3, embed_dim) if use_map else None
 
         self.pos_embed = nn.Sequential(
             nn.Linear(4, embed_dim),
@@ -81,7 +100,6 @@ class ModelForecast(nn.Module):
         self.norm = nn.LayerNorm(embed_dim)
 
         self.actor_type_embed = nn.Parameter(torch.Tensor(num_actor_types, embed_dim))
-        self.lane_type_embed = nn.Parameter(torch.Tensor(3, embed_dim)) if use_map else None
 
         self.dense_predictor = nn.Sequential(
             nn.Linear(embed_dim, 256), nn.GELU(), nn.Linear(256, future_steps * 2)
@@ -91,22 +109,36 @@ class ModelForecast(nn.Module):
             nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
         )
 
+        # M2_history：摘要编码器。输出层零初始化 -> 初始 r_i ≡ 0，
+        # 开启开关即刻与 M0 数值等价（不影响既有训练动态）。
+        if use_missing_summary:
+            self.missing_summary_embed = nn.Sequential(
+                nn.Linear(6, embed_dim),
+                nn.GELU(),
+                nn.Linear(embed_dim, embed_dim),
+            )
+            nn.init.zeros_(self.missing_summary_embed[-1].weight)
+            nn.init.zeros_(self.missing_summary_embed[-1].bias)
+
         self.time_decoder = TimeDecoder(future_len=future_steps, dim=embed_dim, num_modes=num_modes)
 
         self.initialize_weights()
 
     def initialize_weights(self):
         nn.init.normal_(self.actor_type_embed, std=0.02)
-        if self.lane_type_embed is not None:
-            nn.init.normal_(self.lane_type_embed, std=0.02)
 
         self.apply(self._init_weights)
+        # missing_summary_embed 输出层的零初始化必须在 self.apply 之后重申，
+        # 否则会被 _init_weights 的 xavier_uniform 覆盖
+        if self.use_missing_summary:
+            nn.init.zeros_(self.missing_summary_embed[-1].weight)
+            nn.init.zeros_(self.missing_summary_embed[-1].bias)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             torch.nn.init.xavier_uniform_(m.weight)
             if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
+                torch.nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
@@ -123,14 +155,30 @@ class ModelForecast(nn.Module):
         # agent encoding
         hist_valid_mask = data["x_valid_mask"]
         hist_key_valid_mask = data["x_key_valid_mask"]
-        hist_feat = torch.cat(
-            [
-                data["x_positions_diff"],
-                data["x_velocity_diff"][..., None],
-                hist_valid_mask[..., None],
-            ],
-            dim=-1,
-        )
+
+        hist_feat_parts = [
+            data["x_positions_diff"],
+            data["x_velocity_diff"][..., None],
+            hist_valid_mask[..., None],
+        ]
+        # M1_obs：追加 4 个掩码派生时间步特征（顺序固定，方案 §3.1）
+        if self.use_observation_features:
+            missing_keys = [k for k in
+                            ("x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run")
+                            if k not in data]
+            if missing_keys:
+                raise ValueError(
+                    f"use_observation_features=True requires batch fields "
+                    f"{missing_keys} (enable via missing-aware datasets)"
+                )
+            obs_len = self.obs_len
+            hist_feat_parts.extend([
+                data["x_gap_steps"][..., None] / obs_len,
+                data["x_prev_valid_gap"][..., None] / obs_len,
+                data["x_motion_valid"][..., None],
+                data["x_motion_run"][..., None] / (obs_len - 1),
+            ])
+        hist_feat = torch.cat(hist_feat_parts, dim=-1)
 
         B, N, L, D = hist_feat.shape
         hist_feat = hist_feat.view(B * N, L, D)
@@ -159,23 +207,15 @@ class ModelForecast(nn.Module):
         actor_feat_tmp[hist_feat_key_valid] = actor_feat
         actor_feat = actor_feat_tmp.view(B, N, actor_feat.shape[-1])
 
-        # map encoding (only when use_map=True)
-        if self.use_map:
-            lane_valid_mask = data["lane_valid_mask"]
-            lane_normalized = data["lane_positions"] - data["lane_centers"].unsqueeze(-2)
-            lane_normalized = torch.cat(
-                [lane_normalized, lane_valid_mask[..., None]], dim=-1
-            )
-            B, M, L, D = lane_normalized.shape
-            lane_feat = self.lane_embed(lane_normalized.view(-1, L, D).contiguous())
-            lane_feat = lane_feat.view(B, M, -1)
-
         # type embedding and position embedding
-        if self.use_map:
-            x_centers = torch.cat([data["x_centers"], data["lane_centers"]], dim=1)
-            angles = torch.cat([data["x_angles"][:, :, -1], data["lane_angles"]], dim=1)
+        x_centers = data["x_centers"]
+        # 朝向输入：v3_noguard 下帧 7 可能缺失，x_angles[...,-1] 不再可靠；
+        # 改用 dataset 提供的每 actor 最近有效运动对朝向 x_last_valid_angle。
+        # 兼容：老 batch（无该键，v1/v2 旧 collate）回退 x_angles[..., -1]，
+        # 数值与旧版完全一致（v1/v2 下两者相等）。
+        if "x_last_valid_angle" in data:
+            angles = data["x_last_valid_angle"]
         else:
-            x_centers = data["x_centers"]
             angles = data["x_angles"][:, :, -1]
         x_angles = torch.stack([torch.cos(angles), torch.sin(angles)], dim=-1)
         pos_feat = torch.cat([x_centers, x_angles], dim=-1)
@@ -184,46 +224,22 @@ class ModelForecast(nn.Module):
         actor_type_embed = self.actor_type_embed[data["x_attr"][..., 2].long()]
         actor_feat = actor_feat + actor_type_embed
 
-        if self.use_map:
-            lane_type_embed = self.lane_type_embed[data["lane_attr"][..., 0].long()]
-            lane_feat = lane_feat + lane_type_embed
+        # M2_history：摘要条件向量加到（真实 actor 的）历史 actor token。
+        # padding actor 不参与（key_valid=False 的行乘 0），不污染场景上下文。
+        if self.use_missing_summary:
+            if "x_missing_summary" not in data:
+                raise ValueError(
+                    "use_missing_summary=True requires batch field "
+                    "'x_missing_summary' (enable via missing-aware datasets)"
+                )
+            summary_condition = self.missing_summary_embed(data["x_missing_summary"])
+            actor_feat = actor_feat + summary_condition * hist_key_valid_mask[..., None]
 
         # scene context features
-        if self.use_map:
-            x_encoder = torch.cat([actor_feat, lane_feat], dim=1)
-            key_valid_mask = torch.cat(
-                [data["x_key_valid_mask"], data["lane_key_valid_mask"]], dim=1
-            )
-        else:
-            x_encoder = actor_feat
-            key_valid_mask = data["x_key_valid_mask"]
+        x_encoder = actor_feat
+        key_valid_mask = data["x_key_valid_mask"]
 
         x_encoder = x_encoder + pos_embed
-
-        if isinstance(self, StreamModelForecast):
-            if "memory_dict" in data and data["memory_dict"] is not None:
-                rel_pos = data["origin"] - data["memory_dict"]["origin"]
-                rel_ang = (data["theta"] - data["memory_dict"]["theta"] + torch.pi) % (2 * torch.pi) - \
-                torch.pi
-                rel_ts = data["timestamp"] - data["memory_dict"]["timestamp"]
-                memory_pose = torch.cat([
-                    rel_ts.unsqueeze(-1), rel_ang.unsqueeze(-1), rel_pos
-                ], dim=-1).float().to(x_encoder.device)
-                memory_x_encoder = data["memory_dict"]["x_encoder"]
-                memory_valid_mask = data["memory_dict"]["x_mask"]
-            else:
-                memory_pose = x_encoder.new_zeros(x_encoder.size(0), self.pose_dim)
-                memory_x_encoder = x_encoder
-                memory_valid_mask = key_valid_mask
-            cur_pose = torch.zeros_like(memory_pose)
-
-        if isinstance(self, StreamModelForecast) and self.use_stream_encoder:
-            new_x_encoder = x_encoder
-            for inter in self.interaction:
-                new_x_encoder = inter(new_x_encoder, memory_x_encoder, cur_pose, 
-                                      memory_pose, key_padding_mask=~memory_valid_mask)
-            x_encoder = new_x_encoder * key_valid_mask.unsqueeze(-1) + \
-            x_encoder * ~key_valid_mask.unsqueeze(-1)
 
         #  intra-interaction learning for scene context features
         for blk in self.blocks:
@@ -244,44 +260,26 @@ class ModelForecast(nn.Module):
             y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
         # state query initialization
-        # dt 参数化：AV2 原始 0.1s/帧（默认），ETH/UCY/SDD 0.4s/帧（frame_stride=10）
+        # dt 参数化：ETH/UCY 与 SDD 均为 0.4s/帧（frame stride=10 @ 2.5Hz）
         time = torch.arange(self.future_steps).long().to(x_encoder.device)
         time = time * self.dt + self.dt
         time = time.unsqueeze(-1)
         mode = self.time_embedding_mlp(time)
         mode = mode.repeat(x_encoder.size(0), 1, 1)
 
+        # v3 缺失感知：focal forecast_gap 条件化 State Query 初始化
+        # （anchor_lag/forecast_gap 同时进 ret_dict，供 Mode Query/Hybrid
+        #  Coupling 条件化路径消费；v1/v2 下恒为 1/0，无影响）
+        focal_anchor_lag = data.get("x_anchor_lag_steps", None)
+        focal_forecast_gap = data.get("x_forecast_gap_steps", None)
+        if focal_forecast_gap is not None:
+            gap_focal = focal_forecast_gap[:, 0].float()  # [B]
+            if self.use_gap_condition:
+                mode = mode + self.gap_embed(gap_focal.view(-1, 1, 1)).expand_as(mode)
+
         # decoder module with decoupled queries
         dense_predict, y_hat, pi, x_mode, new_y_hat, new_pi, mode_dense, scal, scal_new = \
         self.time_decoder(mode, x_encoder, mask=~key_valid_mask)
-
-        if isinstance(self, StreamModelForecast) and self.use_stream_decoder:
-            cos, sin = data["theta"].cos(), data["theta"].sin()
-            rot_mat = data["theta"].new_zeros(B, 2, 2)
-            rot_mat[:, 0, 0] = cos
-            rot_mat[:, 0, 1] = -sin
-            rot_mat[:, 1, 0] = sin
-            rot_mat[:, 1, 1] = cos
-
-            if "memory_dict" in data and data["memory_dict"] is not None:
-                memory_y_hat = data["memory_dict"]["glo_y_hat"]
-                memory_x_mode = data["memory_dict"]["x_mode"]
-                ori_idx = ((data["timestamp"] - data["memory_dict"]["timestamp"]) / 0.1).long() - 1
-                memory_traj_ori = torch.gather(memory_y_hat, 2, ori_idx.reshape(
-                    B, 1, -1, 1).repeat(1, memory_y_hat.size(1), 1, memory_y_hat.size(-1)))
-                memory_y_hat = torch.bmm(
-                    (memory_y_hat - memory_traj_ori).reshape(B, -1, 2).double(), rot_mat
-                ).reshape(B, memory_y_hat.size(1), -1, 2).to(torch.float32)
-                
-                traj_embed = self.traj_embed(y_hat.detach().reshape(B, y_hat.size(1), -1))
-                memory_traj_embed = self.traj_embed(memory_y_hat.reshape(B, memory_y_hat.size(1), -1))
-                
-                for modfus in self.mode_fusion:
-                    x_mode = modfus(x_mode, memory_x_mode, cur_pose, memory_pose,
-                                    cur_pos_embed=traj_embed,
-                                    memory_pos_embed=memory_traj_embed)
-                y_hat_diff = self.stream_loc(x_mode).reshape(B, y_hat.size(1), -1, 2)
-                y_hat = y_hat + y_hat_diff
 
         ret_dict = {
             "y_hat": y_hat,  # trajectory output from mode query
@@ -297,71 +295,9 @@ class ModelForecast(nn.Module):
             "scal_new": scal_new,  # final output for Laplace loss
         }
 
-        if isinstance(self, StreamModelForecast):
-            glo_y_hat = torch.bmm(
-                y_hat.detach().reshape(B, -1, 2).double(), torch.inverse(rot_mat)
-            ).to(torch.float32)
-            glo_y_hat = glo_y_hat.reshape(B, y_hat.size(1), -1, 2)
-
-            memory_dict = {
-                "x_encoder": x_encoder,
-                "x_mode": x_mode,
-                "glo_y_hat": glo_y_hat,
-                "x_mask": key_valid_mask,
-                "origin": data["origin"],
-                "theta": data["theta"],
-                "timestamp": data["timestamp"],
-            }
-            ret_dict["memory_dict"] = memory_dict
+        # v3 缺失条件通路：focal 时间间隔暴露给后续条件化模块（不作为轨迹特征输入）
+        if focal_anchor_lag is not None:
+            ret_dict["focal_anchor_lag"] = focal_anchor_lag[:, 0]
+            ret_dict["focal_forecast_gap"] = focal_forecast_gap[:, 0]
 
         return ret_dict
-
-
-# integrate 'DeMo' with 'RealMotion'
-class StreamModelForecast(ModelForecast):
-    def __init__(self, 
-                 use_stream_encoder=True,
-                 use_stream_decoder=True,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.use_stream_encoder = use_stream_encoder
-        self.use_stream_decoder = use_stream_decoder
-        self.embed_dim = kwargs["embed_dim"]
-        self.pose_dim = 4
-        if self.use_stream_encoder:
-            self.interaction = nn.ModuleList(
-                InteractionBlock(
-                    dim=kwargs["embed_dim"],
-                    pose_dim=self.pose_dim,
-                    num_heads=kwargs["num_heads"],
-                    mlp_ratio=kwargs["mlp_ratio"],
-                    qkv_bias=kwargs["qkv_bias"],
-                    drop_path=0.2,
-                )
-                for i in range(1)
-            )
-        if self.use_stream_decoder:
-            self.mode_fusion = nn.ModuleList(
-                InteractionBlock(
-                    dim=kwargs["embed_dim"],
-                    pose_dim=self.pose_dim,
-                    num_heads=kwargs["num_heads"],
-                    mlp_ratio=kwargs["mlp_ratio"],
-                    qkv_bias=kwargs["qkv_bias"],
-                    drop_path=0.2,
-                )
-                for i in range(1)
-            )
-            self.stream_loc = nn.Sequential(
-                nn.Linear(kwargs["embed_dim"], 256),
-                nn.GELU(),
-                nn.Linear(256, kwargs["embed_dim"]),
-                nn.GELU(),
-                nn.Linear(kwargs["embed_dim"], kwargs["future_steps"] * 2),
-            )
-            self.traj_embed = nn.Sequential(
-                nn.Linear(kwargs["future_steps"] * 2, kwargs["embed_dim"]),
-                nn.GELU(),
-                nn.Linear(kwargs["embed_dim"], kwargs["embed_dim"]),
-            )
-        

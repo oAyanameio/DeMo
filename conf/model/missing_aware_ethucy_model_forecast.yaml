@@ -1,4 +1,4 @@
-name: ethucy_benchmark_bimamba
+name: missing_aware_ethucy
 phase: actor-only
 
 target:
@@ -15,6 +15,14 @@ target:
     num_modes: 6
     bimamba: true
     dt: 0.4
+    obs_len: 8
+    # M0_base 默认；M1_obs/M2_history 经 Hydra override 开启：
+    #   M1: model.target.model.use_observation_features=true
+    #   M2: 再加 model.target.model.use_missing_summary=true
+    # M3/M4（condition_state_query/mode_query/hybrid）未实现，禁止添加。
+    use_observation_features: false
+    use_missing_summary: false
+    use_gap_condition: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

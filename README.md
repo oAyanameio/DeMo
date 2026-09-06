@@ -1,161 +1,124 @@
-# DeMo: Decoupling Motion Forecasting into Directional Intentions and Dynamic States
-### [[Paper]](https://arxiv.org/abs/2410.05982)
+# DeMo: 面向 ETH/UCY + SDD 的行人轨迹预测实验代码库
 
-> [**DeMo: Decoupling Motion Forecasting into Directional Intentions and Dynamic States**](https://arxiv.org/abs/2410.05982)            
-> [Bozhou Zhang](https://zbozhou.github.io/), [Nan Song](https://scholar.google.com/citations?hl=zh-CN&user=wLZVtjEAAAAJ), [Li Zhang](https://lzrobots.github.io)  
-> **School of Data Science, Fudan University**  
-> **NeurIPS 2024**
+基于 [DeMo (NeurIPS 2024)](https://arxiv.org/abs/2410.05982) 的行人轨迹预测（pedestrian trajectory prediction）研究代码库，收缩为 ETH/UCY + SDD 双数据集、DeMo actor-only（无地图/车道）模型、含缺失历史（missing-history）数据协议的实验框架。
 
-> [**DeMo++: Motion Decoupling for Autonomous Driving**](https://arxiv.org/abs/2507.17342)            
-> [Bozhou Zhang](https://zbozhou.github.io/), [Nan Song](https://scholar.google.com/citations?hl=zh-CN&user=wLZVtjEAAAAJ), [Xiatian Zhu](https://scholar.google.com/citations?user=ZbA-z1cAAAAJ&hl=en), [Li Zhang](https://lzrobots.github.io)  
-> **arXiv preprint arXiv:2507.17342**
+- 模型：DeMo 单向（UniMamba）/ 双向（BiMamba）actor-only 骨干，唯一变量为方向性
+- 数据：ETH/UCY 5 折留一（LOO）+ SDD，缺失历史 v1（轻度）/ v2（高缺失）协议
+- 上游完整版本（含 AV2/自动驾驶管线）存档于 [DeMo_Origin](https://github.com/oAyanameio/DeMo_Origin)
 
-## 🚗 Abstract
-Accurate motion forecasting for traffic agents is crucial for ensuring the safety and efficiency of autonomous driving systems in dynamically changing environments. Mainstream methods adopt a one-query-one-trajectory paradigm, where each query corresponds to a unique trajectory for predicting multi-modal trajectories. While straightforward and effective, the absence of detailed representation of future trajectories may yield suboptimal outcomes, given that the agent states dynamically evolve over time. To address this problem, we introduce DeMo, a framework that decouples multi-modal trajectory queries into two types: mode queries capturing distinct directional intentions and state queries tracking the agent's dynamic states over time. By leveraging this format, we separately optimize the multi-modality and dynamic evolutionary properties of trajectories. Subsequently, the mode and state queries are integrated to obtain a comprehensive and detailed representation of the trajectories. To achieve these operations, we additionally introduce combined Attention and Mamba techniques for global information aggregation and state sequence modeling, leveraging their respective strengths. Extensive experiments on both the Argoverse 2 and nuScenes benchmarks demonstrate that our DeMo achieves state-of-the-art performance in motion forecasting. 
+## 环境安装
 
-## ☕️ News
-* **`6 Feb, 2026`:** We have discovered that there are issues with the current original version of mamba installation. In the [mamba_2026](https://github.com/fudan-zvg/DeMo/tree/26_mamba) branch, we have provided a new version of the installation. The model itself has not been changed. If you cannot install mamba using this version, you can try the new version instead.
-* **`7 Dec, 2024`:** Checkout our work [RealMotion [NeurIPS 2024 Spotlight]](https://github.com/fudan-zvg/RealMotion) 🥰, which proposes a novel motion forecasting framework for continuous driving.
-
-## 🎞️ Pipeline
-<div align="center">
-  <img src="assets/main.jpg"/>
-</div><br/>
-
-## 🛠️ Get started
-
-### Set up a new virtual environment
-```
+```bash
 conda create -n DeMo python=3.10
 conda activate DeMo
-```
+pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
 
-### Install dependency packpages
-```
-pip install torch==2.1.1 torchvision==0.16.1 torchaudio==2.1.1 --index-url https://download.pytorch.org/whl/cu118
-pip install -r ./requirements.txt
-pip install av2==0.2.1
-```
-
-### Install Mamba
-- We follow the settings outlined in [VideoMamba](https://github.com/OpenGVLab/VideoMamba).
-```
+# Mamba（VideoMamba fork，支持 bimamba=True）
 git clone git@github.com:OpenGVLab/VideoMamba.git
 cd VideoMamba
 pip install -e causal-conv1d
 pip install -e mamba
 ```
 
-### Some packages may be useful
-```
-pip install tensorboard
-pip install torch-scatter -f https://data.pyg.org/whl/torch-2.1.1+cu118.html
-pip install protobuf==3.20.3
-```
+注意：RTX 5880 Ada / CUDA 12.8 下 Triton RMSNorm 内核不兼容，`vim_mamba.py` 已改用 PyTorch 原生回退，详见 `docs/audits/`。
 
-## 🕹️ Prepare the data
-### Setup [Argoverse 2 Motion Forecasting Dataset](https://www.argoverse.org/av2.html)
-```
-data_root
-    ├── train
-    │   ├── 0000b0f9-99f9-4a1f-a231-5be9e4c523f7
-    │   ├── 0000b6ab-e100-4f6b-aee8-b520b57c0530
-    │   ├── ...
-    ├── val
-    │   ├── 00010486-9a07-48ae-b493-cf4545855937
-    │   ├── 00062a32-8d6d-4449-9948-6fedac67bfcd
-    │   ├── ...
-    ├── test
-    │   ├── 0000b329-f890-4c2b-93f2-7e2413d4ca5b
-    │   ├── 0008c251-e9b0-4708-b762-b15cb6effc27
-    │   ├── ...
-```
+## 数据准备
 
-### Preprocess
-```
-python preprocess.py --data_root=/path/to/data_root -p
-```
-
-### The structure of the dataset after processing
-```
-└── data
-    └── DeMo_processed
-        ├── train
-        ├── val
-        └── test
-```
-
-## 🔥 Training and testing
-```
-# Train
-python train.py 
-
-# Val, remember to change the checkpoint to your own in eval.py
-python eval.py
-
-# Test for submission
-python eval.py gpus=1 test=true
-```
-
-## ⭐ Results and checkpoints
-- We provide two versions of the models: `DeMo` for [DeMo](https://arxiv.org/abs/2410.05982) itself, and `DeMo+RealMotion`, which integrates [DeMo](https://arxiv.org/abs/2410.05982) with our other work, [RealMotion](https://arxiv.org/abs/2410.06007). You can select which model to use by adjusting the first 3 rows in [config.yaml](https://github.com/fudan-zvg/DeMo/blob/main/conf/config.yaml).
-
-| Models | minADE1 | minFDE1 | minADE6 | minFDE6 |
-| :- | :-: | :-: | :-: | :-: |
-| [DeMo](https://drive.google.com/file/d/1xqj8T5M2cczIZU26poseAQri6VE6v9a0/view?usp=drive_link)   |  1.578  |  3.961  |  0.645  |  1.247  |
-| [DeMo+RealMotion](https://drive.google.com/file/d/131pcHXP-vLcyypZWn6Es7n6TT8bxs4rN/view?usp=drive_link) |  1.478  |  3.728  |  0.607  |  1.186  |
-
-## 🚶 ETH/UCY 行人轨迹预测适配
-
-DeMo 现已支持 [ETH/UCY](https://eth-visual.epfl.ch/) 行人轨迹预测数据集。
-
-### 快速开始
+### ETH/UCY（基准五折）
 
 ```bash
-# 1. 预处理 ETH/UCY 原始数据
+# 1. 源 manifest（fold/split/scene 清单）+ benchmark 预处理，一步完成：
+python src/datamodule/ethucy_benchmark_preprocess.py \
+    --raw-root /path/to/ethucy_raw \
+    --output-root data/ETHUCY_benchmark_v1
+# 或分两步（manifest 也可由 scripts/数据集构建/build_ethucy_manifest.py 单独生成）
+
+# 2. 原始 ETH/UCY txt 预处理（非 benchmark 管线时）
 python scripts/数据集构建/preprocess_ethucy.py \
     --data_root /path/to/ethucy \
     --output_root data/ETHUCY_processed \
-    --frame_stride 10 \
-    --obs_len 8 \
-    --pred_len 12
-
-# 2. 训练
-python train.py --config-name=config_ethucy
-
-# 3. 验证（指定 checkpoint）
-python eval.py \
-    --config-name=config_ethucy \
-    checkpoint=/path/to/checkpoint.ckpt
-
-# 4. 测试指定场景
-python eval.py \
-    --config-name=config_ethucy \
-    datamodule.test_scenes=[ETH] \
-    checkpoint=/path/to/checkpoint.ckpt \
-    test=true
+    --frame_stride 10 --obs_len 8 --pred_len 12
 ```
 
-### 实验协议
+### SDD（Stanford Drone Dataset）
 
-- 数据格式：ETH/UCY 原始 `.txt`
-- 输入：历史 8 帧，预测：未来 12 帧
-- 采样频率：2.5 Hz（frame_stride=10）
-- 多模态数量：6
-- 评估指标：ADE/FDE、minADE6/minFDE6
-- 数据划分：Leave-One-Scene-Out
-- 场景特征：仅使用行人历史轨迹和社会交互，不使用车道线地图
+仓库内无 SDD 预处理脚本。需自行准备 **MoFlow 格式源数据**（`data/sdd/`，即 MoFlow 协议的 pkl/划分格式）；缺失历史数据集直接在该源上构建。
 
-### 与 AV2 的关系
+### 缺失历史数据集（v1/v2，同一构建脚本，--version 区分）
 
-ETH/UCY 适配采用独立的代码分支，不修改现有 AV2 数据流程。AV2 配置和训练方式保持不变。
+```bash
+# v1 轻度：complete / random_single / random_block2
+python scripts/数据集构建/build_missing_history_dataset.py --dataset ethucy \
+    --source-root data/ETHUCY_benchmark_v1 --output-root data/ETHUCY_missing_v1 \
+    --conditions complete random_single random_block2
+python scripts/数据集构建/build_missing_history_dataset.py --dataset sdd \
+    --source-root data/sdd --output-root data/SDD_missing_v1 \
+    --conditions complete random_single random_block2
 
-### Qualitative Results
-<div align="center">
-  <img src="assets/visual.jpg"/>
-</div><br/>
+# v2 高缺失：fixed3/fixed4、block3/block4/block6（37.5%~75%）
+python scripts/数据集构建/build_missing_history_dataset.py --dataset ethucy \
+    --source-root data/ETHUCY_benchmark_v1 --output-root data/ETHUCY_missing_v2_high \
+    --version missing_history_v2_high \
+    --conditions random_fixed3 random_fixed4 random_block3 random_block4 random_block6
+python scripts/数据集构建/build_missing_history_dataset.py --dataset sdd \
+    --source-root data/sdd --output-root data/SDD_missing_v2_high \
+    --version missing_history_v2_high \
+    --conditions random_fixed3 random_fixed4 random_block3 random_block4 random_block6
 
-## 📜 BibTeX
+# 验收审计
+python scripts/审计与校验/audit_missing_history_dataset.py --dataset ethucy \
+    --data-root data/ETHUCY_missing_v1 --source-root data/ETHUCY_benchmark_v1
+```
+
+## 训练与评估
+
+```bash
+# ETH/UCY 基准（默认入口：config.yaml → ethucy_benchmark + ETH fold）
+python train.py
+python train.py fold=UNIV                 # 换折
+python eval.py checkpoint='/path/to/ckpt' test=true
+
+# 缺失历史训练适应臂（单向）
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/训练与评估/run_ethucy_benchmark.py \
+    --config-name config_ethucy_benchmark \
+    --data-root data/ETHUCY_missing_v1/random_block2 \
+    --output-root outputs/ethucy_missing_v1_random_block2 --gpu 0
+
+# 双向（bimamba）臂
+CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. python scripts/训练与评估/run_ethucy_benchmark.py \
+    --config-name config_ethucy_benchmark_bimamba \
+    --data-root data/ETHUCY_missing_v1/random_block2 \
+    --output-root outputs/ethucy_missing_v1_bimamba_random_block2 --gpu 1
+
+# SDD（缺失历史，含 bimamba）
+CUDA_VISIBLE_DEVICES=2 python scripts/训练与评估/run_sdd_missing.py random_block2
+CUDA_VISIBLE_DEVICES=2 python scripts/训练与评估/run_sdd_missing_bimamba.py complete 100
+
+# 零样本（complete 模型直测掩码测试集）
+bash scripts/训练与评估/run_zeroshot_v2.sh   # SDD 补跑见 rerun_zeroshot_sdd.sh
+```
+
+## 目录结构
+
+```
+conf/                 Hydra 配置（ETH/UCY、SDD、缺失历史、uni/bi）
+src/datamodule/       ETH/UCY、SDD、MoFlow 协议、missing 数据管线
+src/model/            DeMo actor-only（ModelForecast + TimeDecoder）
+src/metrics/          minADE/minFDE/MR/brierFDE
+scripts/              数据集构建 / 训练与评估 / 审计与校验 / 结果分析
+docs/                 研究文档、实验结果、审计报告、数据集说明
+```
+
+## 实验结果索引
+
+- 总汇总：`docs/results/缺失历史实验总汇总.md`（唯一权威，随实验追加）
+- 逐折数字：`outputs/*/results.json`、`outputs/sdd_*_summary.txt`
+- 审计报告：`docs/audits/`
+- MoFlow vs DeMo 留出对照：`docs/results/MoFlow与DeMo留出测试对比.md`
+
+## 上游出处
+
 ```bibtex
 @inproceedings{zhang2024demo,
  title={DeMo: Decoupling Motion Forecasting into Directional Intentions and Dynamic States},
@@ -165,8 +128,4 @@ ETH/UCY 适配采用独立的代码分支，不修改现有 AV2 数据流程。A
 }
 ```
 
-## ❤️ Acknowledgements
- - [VideoMamba](https://github.com/OpenGVLab/VideoMamba)
- - [Forecast-MAE](https://github.com/jchengai/forecast-mae)
- - [StreamPETR](https://github.com/exiawsh/StreamPETR)
- - [RealMotion (Ours)](https://github.com/fudan-zvg/RealMotion)
+致谢：[VideoMamba](https://github.com/OpenGVLab/VideoMamba)、[Forecast-MAE](https://github.com/jchengai/forecast-mae)、[StreamPETR](https://github.com/exiawsh/StreamPETR)

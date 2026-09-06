@@ -1,6 +1,6 @@
 """ETH/UCY 模型单元测试。
 
-测试 ModelForecast 在 use_map=False 模式下的前向传播。
+测试 actor-only ModelForecast 的初始化与前向传播。
 """
 
 import pytest
@@ -8,9 +8,11 @@ import torch
 
 from src.model.model_forecast import ModelForecast
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 def _make_dummy_batch_actor_only(
-    B=2, N=10, obs_len=8, pred_len=12, device="cuda" if __import__("torch").cuda.is_available() else "cpu"
+    B=2, N=10, obs_len=8, pred_len=12, device=DEVICE
 ):
     """构造 actor-only 模式的 dummy batch。"""
     data = {
@@ -32,28 +34,29 @@ def _make_dummy_batch_actor_only(
     return data
 
 
+def _make_model():
+    return ModelForecast(
+        embed_dim=128,
+        future_steps=12,
+        num_actor_types=1,
+    ).to(DEVICE)
+
+
 class TestModelForecastActorOnly:
-    """测试 use_map=False 模式。"""
+    """测试 actor-only 模式。"""
 
     def test_model_init(self):
-        model = ModelForecast(
-            embed_dim=128,
-            future_steps=12,
-            use_map=False,
-            num_actor_types=1,
-        ).to(__import__("torch").device("cuda" if __import__("torch").cuda.is_available() else "cpu"))
-        assert model.use_map is False
+        model = _make_model()
         assert model.future_steps == 12
-        assert model.lane_embed is None
-        assert model.lane_type_embed is None
+        assert model.num_actor_types == 1
+        assert model.dt == 0.4
+        # 模型不含任何地图/车道属性
+        assert not hasattr(model, "use_map")
+        assert not hasattr(model, "lane_embed")
+        assert not hasattr(model, "lane_type_embed")
 
     def test_forward_shape(self):
-        model = ModelForecast(
-            embed_dim=128,
-            future_steps=12,
-            use_map=False,
-            num_actor_types=1,
-        ).to(__import__("torch").device("cuda" if __import__("torch").cuda.is_available() else "cpu"))
+        model = _make_model()
         model.eval()
         data = _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12)
 
@@ -66,32 +69,29 @@ class TestModelForecastActorOnly:
         assert out["pi"].shape == (2, 6)
         # scal: [B, M, 12, 2]
         assert out["scal"].shape == (2, 6, 12, 2)
+        # refine 输出
+        assert out["new_y_hat"].shape == (2, 6, 12, 2)
 
     def test_forward_no_lane_access(self):
-        """确认 use_map=False 时模型不访问 lane 字段。"""
-        model = ModelForecast(
-            embed_dim=128,
-            future_steps=12,
-            use_map=False,
-            num_actor_types=1,
-        ).to(__import__("torch").device("cuda" if __import__("torch").cuda.is_available() else "cpu"))
+        """确认模型前向不访问 lane 字段。"""
+        model = _make_model()
         model.eval()
         data = _make_dummy_batch_actor_only(B=2, N=10, obs_len=8, pred_len=12)
 
-        # 不应该抛出 KeyError
+        # 不应该抛出 KeyError（batch 中无任何 lane_* 键）
         with torch.no_grad():
             out = model(data)
 
         assert out is not None
 
-    def test_av2_mode_unchanged(self):
-        """确认 use_map=True (默认) 行为不变。"""
-        model = ModelForecast(
-            embed_dim=128,
-            future_steps=60,
-            use_map=True,
-        ).to(__import__("torch").device("cuda" if __import__("torch").cuda.is_available() else "cpu"))
-        assert model.use_map is True
-        assert model.lane_embed is not None
-        assert model.lane_type_embed is not None
-        assert model.future_steps == 60
+    def test_forward_single_agent(self):
+        """N=1（无邻居）时前向仍可用。"""
+        model = _make_model()
+        model.eval()
+        data = _make_dummy_batch_actor_only(B=2, N=1, obs_len=8, pred_len=12)
+
+        with torch.no_grad():
+            out = model(data)
+
+        assert out["y_hat"].shape == (2, 6, 12, 2)
+        assert out["y_hat_others"].shape[1] == 0

@@ -93,10 +93,26 @@ def preprocess(raw_root: str, output_root: str, obs_len: int = 8, pred_len: int 
     if source_manifest is None or not os.path.exists(source_manifest):
         source_manifest = os.path.join(output_root, "source_manifest.json")
     if not os.path.exists(source_manifest):
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-        from build_ethucy_manifest import build_manifest as _bm
+        # build_ethucy_manifest.py 位于 <repo>/scripts/数据集构建/（仓库重组后的位置）；
+        # 兼容从任意 cwd 执行：按本文件位置解析仓库根，再拼接脚本目录。
+        _cand_dirs = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "scripts", "数据集构建"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"),
+        ]
+        _manifest_mod = None
+        for _d in _cand_dirs:
+            if os.path.exists(os.path.join(_d, "build_ethucy_manifest.py")):
+                sys.path.insert(0, _d)
+                from build_ethucy_manifest import build_manifest as _bm
+                _manifest_mod = _bm
+                break
+        if _manifest_mod is None:
+            raise ImportError(
+                "build_ethucy_manifest.py not found; looked in: "
+                + ", ".join(os.path.abspath(d) for d in _cand_dirs)
+            )
         os.makedirs(output_root, exist_ok=True)
-        sm_folds = _bm(raw_root)
+        sm_folds = _manifest_mod(raw_root)
         # 包裹为与 build_ethucy_manifest.main() 一致的格式（preprocess 读 sm["folds"]）
         sm = {
             "version": "ethucy_benchmark_v1_source",

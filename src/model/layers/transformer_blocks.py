@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from timm.models.layers import DropPath
 from torch import Tensor
-from .mln import MLN, nerf_positional_encoding
 
 
 class Mlp(nn.Module):
@@ -119,57 +118,6 @@ class Block(nn.Module):
         return self.forward_pre(src=src, mask=mask, key_padding_mask=key_padding_mask)
 
 
-class InteractionBlock(nn.Module):
-    def __init__(
-        self,
-        dim=128,
-        pose_dim=4,
-        num_heads=8,
-        mlp_ratio=4.0,
-        qkv_bias=False,
-        drop=0.2,
-        attn_drop=0.2,
-        drop_path=0.2,
-        act_layer=nn.GELU,
-        norm_layer=nn.LayerNorm,
-    ):
-        super().__init__()
-
-        self.mln = MLN(pose_dim * 12)
-        self.cross_blocks = nn.ModuleList(
-            Cross_Block(
-                dim=dim,
-                num_heads=num_heads,
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                drop_path=attn_drop,
-            )
-            for i in range(2)
-        )
-
-    def forward(
-        self,
-        cur_embed,
-        memory_embed,
-        cur_pose,
-        memory_pose,
-        cur_pos_embed=None,
-        memory_pos_embed=None,
-        mask: Optional[torch.Tensor] = None,
-        key_padding_mask: Optional[torch.Tensor] = None,
-    ):
-        cur_pose = nerf_positional_encoding(cur_pose).unsqueeze(1).repeat(1, cur_embed.size(1), 1)
-        memory_pose = nerf_positional_encoding(memory_pose).unsqueeze(1).repeat(1, memory_embed.size(1), 1)
-        cur_embed = self.mln(cur_embed, cur_pose)
-        memory_embed = self.mln(memory_embed, memory_pose)
-        if cur_pos_embed is not None:
-            cur_embed += cur_pos_embed
-        if memory_pos_embed is not None:
-            memory_embed += memory_pos_embed
-
-        for cross in self.cross_blocks:
-            cur_embed = cross(src=cur_embed, src_kv=memory_embed, mask=mask, key_padding_mask=key_padding_mask)
-        return cur_embed
     
 
 class Cross_Block(nn.Module):

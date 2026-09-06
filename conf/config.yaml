@@ -1,10 +1,6 @@
 defaults:
-  - datamodule: av2  # 'av2' for 'DeMo', 'av2_stream' for 'DeMo+RealMotion'
-  - model: model_forecast  # 'model_forecast' for 'DeMo', 'stream_model_forecast' for 'DeMo+RealMotion'
-# eg: For 'DeMo'
-# defaults:
-#   - datamodule: av2
-#   - model: model_forecast
+  - datamodule: ethucy_benchmark
+  - model: ethucy_benchmark_model_forecast
 
 hydra:
   run:
@@ -14,19 +10,20 @@ seed: 2024
 monitor: val_minFDE6
 save_top_k: 10
 
-data_root:
+data_root: data/ETHUCY_benchmark_v1
+fold: ETH
 checkpoint:
 pretrained_weights:
 output: change_${datamodule.name}_${datamodule.phase}_${model.name}_${model.phase}
 
 # trainer
 num_workers: 4
-gpus: 8  # when test, only use 1 gpu; when train/val, use 8 gpus
-sync_bn: true
-batch_size: 16
-epochs: 60
+gpus: 1
+sync_bn: false
+batch_size: 64
+epochs: 100
 warmup_epochs: 10
-precision: 32-true  # AV2 默认入口；ETH/UCY benchmark 配置覆盖为 bf16
+precision: bf16
 
 # optimizer
 lr: 0.003  

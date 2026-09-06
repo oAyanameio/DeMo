@@ -11,7 +11,6 @@ target:
     mlp_ratio: 4.0
     qkv_bias: False
     drop_path: 0.2
-    use_map: False
     num_actor_types: 1
     num_modes: 20
     bimamba: true
@@ -21,4 +20,3 @@ target:
   weight_decay: ${weight_decay}
   epochs: ${epochs}
   warmup_epochs: ${warmup_epochs}
-  submission_type: ethucy

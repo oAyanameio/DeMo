@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from src.metrics import MR, minADE, minFDE, brier_minFDE
 from src.utils.optim import WarmupCosLR
 from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
-from .model_forecast import ModelForecast, StreamModelForecast
+from .model_forecast import ModelForecast
 
 
 class Trainer(pl.LightningModule):
@@ -23,28 +23,15 @@ class Trainer(pl.LightningModule):
         warmup_epochs: int = 10,
         epochs: int = 60,
         weight_decay: float = 1e-4,
-        submission_type: str = "av2",
     ) -> None:
         super(Trainer, self).__init__()
         self.warmup_epochs = warmup_epochs
         self.epochs = epochs
         self.lr = lr
         self.weight_decay = weight_decay
-        self.submission_type = submission_type
         self.save_hyperparameters()
-        if submission_type == "av2":
-            # Lazy import: avoids hard dependency on the av2 package for
-            # ETH/UCY-only runs while preserving AV2 functionality.
-            from src.utils.submission_av2 import SubmissionAv2
-            self.submission_handler = SubmissionAv2()
-        elif submission_type == "ethucy":
-            from src.utils.submission_ethucy import SubmissionEthUcy
-            self.submission_handler = SubmissionEthUcy()
-        else:
-            raise ValueError(
-                f"Unknown submission_type: {submission_type}. "
-                f"Expected 'av2' or 'ethucy'."
-            )
+        from src.utils.submission_ethucy import SubmissionEthUcy
+        self.submission_handler = SubmissionEthUcy()
 
         model_type = model.pop('type')
 
@@ -69,27 +56,23 @@ class Trainer(pl.LightningModule):
         self.laplace_loss = LaplaceNLLLoss()
         self.val_metrics = metrics.clone(prefix="val_")
         self.val_metrics_new = metrics.clone(prefix="val_new_")
-    
+
     def get_model(self, model_type):
         model_dict = {
-            'ModelForecast': ModelForecast,  # only 'DeMo'
-            'StreamModelForecast': StreamModelForecast,  # integrate 'DeMo' with 'RealMotion'
+            'ModelForecast': ModelForecast,  # DeMo actor-only
         }
-        assert model_type in model_dict
+        assert model_type in model_dict, f"Unknown model type: {model_type}"
         return model_dict[model_type]
 
     def forward(self, data):
         return self.net(data)
 
     def predict(self, data):
-        memory_dict = None
         predictions = []
         probs = []
         for i in range(len(data)):
             cur_data = data[i]
-            cur_data['memory_dict'] = memory_dict
             out = self(cur_data)
-            memory_dict = out['memory_dict']
             prediction, prob = self.submission_handler.format_data(
                 cur_data, out["y_hat"], out["pi"], inference=True)
             predictions.append(prediction)
@@ -119,7 +102,7 @@ class Trainer(pl.LightningModule):
         y_hat_best = y_hat[torch.arange(y_hat.shape[0]), best_mode]
         agent_reg_loss = F.smooth_l1_loss(y_hat_best[..., :2], y)
         agent_cls_loss = F.cross_entropy(pi, best_mode.detach(), label_smoothing=0.2)
-        
+
         # loss for final output
         if new_y_hat is not None:
             l2_norm_new = torch.norm(new_y_hat[..., :2] - y.unsqueeze(1), dim=-1).sum(dim=-1)
@@ -177,8 +160,6 @@ class Trainer(pl.LightningModule):
         return loss, disp_dict
 
     def training_step(self, data, batch_idx):
-        if isinstance(data, list):
-            data = data[-1]
         out = self(data)
         loss, loss_dict = self.cal_loss(out, data)
 
@@ -195,15 +176,12 @@ class Trainer(pl.LightningModule):
         return loss
 
     def validation_step(self, data, batch_idx):
-        if isinstance(data, list):
-            data = data[-1]
         out = self(data)
         _, loss_dict = self.cal_loss(out, data)
         metrics = self.val_metrics(out, data['target'][:, 0])
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
-        if out['new_y_hat'] is not None:
             metrics_new = self.val_metrics_new(out, data['target'][:, 0])
 
         self.log_dict(
@@ -227,17 +205,11 @@ class Trainer(pl.LightningModule):
     def on_test_start(self) -> None:
         save_dir = Path("./submission")
         save_dir.mkdir(exist_ok=True)
-        if self.submission_type == "av2":
-            from src.utils.submission_av2 import SubmissionAv2
-            self.submission_handler = SubmissionAv2(save_dir=str(save_dir))
-        elif self.submission_type == "ethucy":
-            from src.utils.submission_ethucy import SubmissionEthUcy
-            self.submission_handler = SubmissionEthUcy(save_dir=str(save_dir))
+        from src.utils.submission_ethucy import SubmissionEthUcy
+        self.submission_handler = SubmissionEthUcy(save_dir=str(save_dir))
         self.test_metrics = self.val_metrics.clone(prefix="test_")
 
     def test_step(self, data, batch_idx) -> None:
-        if isinstance(data, list):
-            data = data[-1]
         out = self(data)
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
@@ -323,104 +295,3 @@ class Trainer(pl.LightningModule):
             epochs=self.epochs,
         )
         return [optimizer], [scheduler]
-
-
-# integrate 'DeMo' with 'RealMotion'
-class StreamTrainer(Trainer):
-    def __init__(self,
-                 num_grad_frame=2,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.num_grad_frame = num_grad_frame
-    
-    def training_step(self, data, batch_idx):
-        total_step = len(data)
-        num_grad_frames = min(self.num_grad_frame, total_step)
-        num_no_grad_frames = total_step - num_grad_frames
-
-        memory_dict = None
-        self.eval()
-        with torch.no_grad():
-            for i in range(num_no_grad_frames):
-                cur_data = data[i]
-                cur_data['memory_dict'] = memory_dict
-                out = self(cur_data)
-                memory_dict = out['memory_dict']
-        
-        self.train()
-        sum_loss = 0
-        loss_dict = {}
-        for i in range(num_grad_frames):
-            cur_data = data[i + num_no_grad_frames]
-            cur_data['memory_dict'] = memory_dict
-            out = self(cur_data)
-            cur_loss, cur_loss_dict = self.cal_loss(out, cur_data, tag=f'step{i + num_no_grad_frames}_')
-            loss_dict.update(cur_loss_dict)
-            sum_loss += cur_loss
-            memory_dict = out['memory_dict']
-        loss_dict['loss'] = sum_loss.item()
-        for k, v in loss_dict.items():
-            self.log(
-                f"train/{k}",
-                v,
-                on_step=True,
-                on_epoch=True,
-                prog_bar=False,
-                sync_dist=True,
-            )
-
-        return sum_loss
-    
-    def validation_step(self, data, batch_idx):
-        memory_dict = None
-        all_outs = []
-        for i in range(len(data)):
-            cur_data = data[i]
-            if cur_data['x_positions_diff'].size(1) == 1:
-                return
-            cur_data['memory_dict'] = memory_dict
-            out = self(cur_data)
-            _, cur_loss_dict = self.cal_loss(out, cur_data, tag=f'step{i}_')
-            memory_dict = out['memory_dict']
-            all_outs.append(out)
-        
-        metrics = self.val_metrics(all_outs[-1], data[-1]['target'][:, 0])
-        if all_outs[-1]['new_y_hat'] is not None:
-            all_outs[-1]['y_hat'] = all_outs[-1]['new_y_hat']
-            all_outs[-1]['pi'] = all_outs[-1]['new_pi']
-        if all_outs[-1]['new_y_hat'] is not None:
-            metrics_new = self.val_metrics_new(all_outs[-1], data[-1]['target'][:, 0])
-
-        self.log_dict(
-            metrics,
-            prog_bar=True,
-            on_step=False,
-            on_epoch=True,
-            batch_size=1,
-            sync_dist=True,
-        )
-        if all_outs[-1]['new_y_hat'] is not None:
-            self.log_dict(
-                metrics_new,
-                prog_bar=True,
-                on_step=False,
-                on_epoch=True,
-                batch_size=1,
-                sync_dist=True,
-            )
-    
-    def test_step(self, data, batch_idx) -> None:
-        memory_dict = None
-        all_outs = []
-        for i in range(len(data)):
-            cur_data = data[i]
-            cur_data['memory_dict'] = memory_dict
-            out = self(cur_data)
-            memory_dict = out['memory_dict']
-            all_outs.append(out)
-
-        if all_outs[-1]['new_y_hat'] is not None:
-            all_outs[-1]['y_hat'] = all_outs[-1]['new_y_hat']
-            all_outs[-1]['pi'] = all_outs[-1]['new_pi']
-
-        self.submission_handler.format_data(data[-1], all_outs[-1]["y_hat"], all_outs[-1]["pi"])
