@@ -23,21 +23,37 @@
 
 | 方法 | minADE20 | minFDE20 |
 |---|---|---|
-| ET+HighGraph | 7.81 | 11.09 |
-| TUTR (AAAI23) | 7.76 | 12.69 |
-| **MoFlow 教师 (CVPR25)** | **7.50** | 11.96 |
-| MoFlow-IMLE | 7.85 | 12.86 |
-| LED (CVPR23) | 8.48 | 11.66 |
-| EigenTraj (CVPR23) | 8.05 | 13.25 |
-| NPSN | 8.56 | 11.85 |
-| **DeMo-单向（本文）** | **8.31** | **13.66** |
-| **DeMo-双向（本文）** | **9.84** | **17.55** |
-| SocialVAE | 8.88 | 14.81 |
-| MID (WACV22) | 9.73 | 15.32 |
-| MemoNet | 9.50 | 14.78 |
-| CAGN | 9.42 | 15.93 |
-| GroupNet | 9.31 | 16.11 |
-| Y-net | 11.49 | 20.23 |
+| ET+HighGraph (CVPR 2024) | 7.81 | 11.09 |
+| LED (CVPR 2023) | 8.48 | 11.66 |
+| NPSN (CVPR 2022) | 8.56 | 11.85 |
+| **MoFlow 教师 (CVPR 2025)** | **7.50** | 11.96 |
+| TUTR (ICCV 2023) | 7.76 | 12.69 |
+| MoFlow-IMLE (CVPR 2025 同文变体) | 7.85 | 12.86 |
+| EigenTraj (CVPR 2023) | 8.05 | 13.25 |
+| **DeMo-单向（本文复现，MoFlow 协议）** | **8.31** | **13.66** |
+| MemoNet (CVPR 2022) | 9.50 | 14.78 |
+| SocialVAE (ECCV 2022) | 8.88 | 14.81 |
+| CAGN (AAAI 2022) | 9.42 | 15.93 |
+| GroupNet (CVPR 2022) | 9.31 | 16.11 |
+| **DeMo-双向（本文复现，MoFlow 协议）** | **9.84** | **17.55** |
+| Y-net (ICCV 2021) | 11.49 | 20.23 |
+
+注：
+- 剔除标准：非 CCF-A/一区不考虑；ECCV（CCF-B）经确认列为可接受。已剔除：MID（WACV 2022，CCF-C）。
+- TUTR 原表标注 AAAI23 有误，IEEE/CVF 目录确认其为 ICCV 2023。
+- ET+HighGraph 为 EigenTraj 骨干 + HighGraph 插件（CVPR 2024, Higher-order Relational Reasoning）的组合。
+- MoFlow-IMLE 为 MoFlow 论文（CVPR 2025）内的 IMLE 蒸馏学生，非独立发表。
+- DeMo 两行为本仓库在 MoFlow 协议（同数据 sdd_train/sdd_test.pkl、同 90/10 划分、同选点 val_minFDE20）下的复现值，与论文数字直接可比。
+
+## 2.1 MoFlow vs DeMo SDD 直接对照
+
+| 模型 |  | minADE20 | minFDE20 | vs MoFlow 教师 |
+|---|---|---|---|---|
+| MoFlow 教师（论文值） |  | 7.50 | 11.96 | — |
+| DeMo-单向 |  | 8.31 | 13.66 | +10.8% / +14.2% |
+| DeMo-双向 |  | 9.84 | 17.55 | +31.2% / +46.7% |
+
+注：同一 held-out test（sdd_test.pkl，N=2829）、同一选点规则（val_minFDE20 最小）、同源数据。DeMo 最好成绩（单向 13.66）距 MoFlow 教师仍差 14.2%；单向 < 双向一致成立。
 
 DeMo-单向在 SDD 上处于 EigenTraj 档（ADE 优于 NPSN/LED，FDE 略逊于 EigenTraj），距 MoFlow 教师 +10.8%/+14.2%——比 ETH/UCY 上的差距（+14.7%/+20.7%）更近。
 

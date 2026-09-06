@@ -326,7 +326,7 @@ SDD 保留像素坐标，不转换为米，不使用 ETH/UCY 的归一化统计�
   "pred_len": 12,
   "dt": 0.4,
   "unit": "meter",
-  "use_map": false,
+  "use_map": false,  # 历史接口字段：模型收缩为 actor-only 后已随构建脚本移除，旧 manifest 中仍存在
   "mask_seed": 42,
   "split_seed": null,
   "conditions": [

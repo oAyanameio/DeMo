@@ -9,7 +9,7 @@
 
 condition ∈ {complete, random_single, random_block2,
              random_fixed3/4/5, random_block3/4/6}
-data_root 缺省 data/SDD_missing_v1；v2 高缺失条件传 data/SDD_missing_v2_high。
+data_root 缺省 data/SDD_missing_v1；v2 传 data/SDD_missing_v2_high；v3_noguard 传 data/SDD_missing_v3_noguard。
 结果追加到 outputs/sdd_missing_bimamba_<condition>_summary.txt。
 """
 import csv
@@ -23,7 +23,11 @@ D = Path("/home/lbh/DeMo")
 PY = f"{Path.home()}/.conda/envs/DeMo/bin/python"
 CONDITIONS = ["complete", "random_single", "random_block2",
               "random_fixed3", "random_fixed4", "random_fixed5",
-              "random_block3", "random_block4", "random_block6"]
+              "random_block3", "random_block4", "random_block6",
+              # v3_noguard（无保护）：data_root 传 data/SDD_missing_v3_noguard
+              "random_fixed3_ng", "random_fixed4_ng",
+              "random_block3_ng", "random_block4_ng", "random_block6_ng",
+              "uniform_hard_ng"]
 CFG = "config_sdd_missing_bimamba"
 
 

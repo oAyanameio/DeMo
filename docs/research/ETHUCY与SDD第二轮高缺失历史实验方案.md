@@ -178,6 +178,77 @@ SDD 的新条件不得改变 v1 的像素坐标、样本顺序和 90/10 train/va
 
 本轮不允许放开帧 6、7 的缺失。若要研究“末帧也缺失”或“只剩一个观测帧”，必须另建允许最后有效帧锚定的 v3 协议，不能把坐标锚点变化与 v2 的缺失率效果混在一起。
 
+## 5.1 v3 无保护扩展协议（missing_history_v3_noguard，2026-09-05 立项，与 v2 并列）
+
+### 5.1.1 动机与边界
+
+v2 的帧 6/7 强制可见是刻意的控制变量设计（隔离缺失效应与锚点重定义效应）。v3 放开该保护以覆盖遮挡下"最近观测缺失"的现实情形。边界：v3 独立目录独立构建，不修改、不重生成 v1/v2 的任何数据、掩码、结果；本方案 §7 的验收项（含"帧 6、7 都为可见"）**仅适用于 v2**，v3 验收见 §5.1.5。
+
+与外部协议（TrajImpute NeurIPS 2024 D&B、MoFlow stage-2）的关系定位为：**无保护末端条件对齐，可比较退化趋势**。在统一 K、掩码分布与训练协议之前，不直接宣称跨论文 SOTA 横比。
+
+### 5.1.2 时间间隔术语（正式定义）
+
+对每个 actor，记 `last_valid_idx` 为其历史窗口（帧 0–7）中最后一个可见帧下标：
+
+```text
+anchor_lag_steps   = 7 - last_valid_idx   （锚点滞后：最后可见帧距观测窗末端的步数）
+forecast_gap_steps = 8 - last_valid_idx   （预测起点间隔：最后可见帧距未来首帧的步数）
+```
+
+v1/v2 中帧 7 恒可见：`anchor_lag_steps` 恒为 **0**，`forecast_gap_steps` 恒为 **1**。（此前草案中"Δ_anchor 在 v2 恒为 0"的表述按此正式定义修正。）v3 中两者成为逐 actor 变量。
+
+### 5.1.3 条件定义（候选帧集 C = {0..7}，无保护）
+
+| 条件 | 掩码规则 | 名义缺失帧数 | 说明 |
+|---|---|---|---|
+| `random_fixed3_ng` | 从 0..7 无放回抽 3 帧 | 3 | |
+| `random_fixed4_ng` | 从 0..7 无放回抽 4 帧 | 4 | |
+| `random_block3_ng` | 连续 3 帧，起点 s∈{0..5} 均匀 | 3 | |
+| `random_block4_ng` | 连续 4 帧，起点 s∈{0..4} 均匀 | 4 | |
+| `random_block6_ng` | 连续 6 帧，起点 s∈{0..2} 均匀（**不再固定缺 0..5**） | 6 | |
+| `uniform_hard_ng` | 每个真实 actor 独立采样 m ~ Uniform{4,5,6,7}，再从 0..7 无放回随机缺 m 帧 | 4–7 | TrajImpute hard 档对齐 |
+
+- 掩码确定性：沿用 SHA256 身份键（`dataset|fold|split|scene_id|source_index|source_file|focal_id|condition|mask_seed`），condition 携带 `_ng` 后缀与 v2 天然隔离；**train/val/test 全 split 均用确定性掩码**
+- 最低可见保证：每个真实 actor 至少 1 个历史可见帧；掩码生成后校验 `hist_mask.any(dim=1)`，违反即重建该 actor 掩码（重抽，仍确定性由身份键控制——重抽计数并入 key 重散列，规则见 §5.1.4）
+- uniform_hard_ng 的 m 从 rng 派生（`m = 4 + rng.integers(0,4)`），随后抽缺失帧
+
+### 5.1.4 数据生成与样本字段
+
+目录：`data/ETHUCY_missing_v3_noguard/`、`data/SDD_missing_v3_noguard/`（与 v1/v2 并列，不覆盖）。
+
+每个样本在 v2 canonical 字段基础上新增：
+
+```text
+last_valid_idx        [A]     每个 actor 的最后可见历史帧下标
+anchor_lag_steps      [A]     7 - last_valid_idx
+forecast_gap_steps    [A]     8 - last_valid_idx
+history_mask          [A,8]   （沿用）
+condition / mask_seed         （沿用）
+```
+
+掩码重抽规则：若某 actor 掩码全 False（无可见帧），以 `key + "|retry{k}"`（k=1,2,...）重新派生 rng 直至满足 ≥1 可见帧；该规则完全确定、可审计复现。
+
+manifest：`version = "missing_history_v3_noguard"`；`history_visibility_rule = "no_guard_min_1_visible"`；各 condition 记录掩码规则、名义缺失率、**m 分布直方图**（uniform_hard_ng 按 m=4/5/6/7 计数）与实际缺失率、样本数；`anchor_lag`/`forecast_gap` 的分布统计（均值/直方图）一并入 manifest。
+
+### 5.1.5 v3 审计与接口验收
+
+审计（audit_missing_history_dataset.py --version missing_history_v3_noguard）：
+- 不再断言帧 6/7 可见；改为断言每个真实 actor ≥1 可见历史帧；
+- 断言掩码确定性（独立重推）、future 与源逐位一致、可见历史与源逐位一致、缺失坐标占位为 0；
+- 断言 `last_valid_idx`/`anchor_lag_steps`/`forecast_gap_steps` 三字段与 history_mask 一致（重算比对）；
+- uniform_hard_ng：断言每 actor 缺失数 m∈{4,5,6,7}，统计各 m 频率并与 manifest 对照。
+
+接口冒烟（smoke_missing_history_interface.py）：
+- v3 断言：x_centers 等于每个 actor 的最后有效位置；focal 原点=focal 最后可见位置、heading 回溯正确（含单帧可见回退 theta=0）；仅单帧可见样本可前向、输出无 NaN/Inf；
+- v1/v2 断言（回归）：帧 6/7 恒有效、x_centers=帧 7 等原有检查保留在 v1/v2 模式下运行。
+
+结果报告：v3 至少按 m=4/5/6/7 分层报告（uniform_hard_ng），不得只报混合均值；其余条件按条件名报告。
+
+### 5.1.6 训练/零样本入口
+
+- 零样本（首选验证路径）：v1/v2 complete ckpt 直测 v3 test 集；**checkpoint 选择只允许来自 complete 模型自身的 val 指标，禁止读取 v3 test 指标选点**
+- 训练适应臂：run_ethucy_benchmark.py / run_sdd_missing(_bimamba).py 的条件白名单扩展 `*_ng`，输出目录 `outputs/*_v3_noguard_*` 前缀，不覆盖 v1/v2 输出
+
 ## 6. 第二轮实验设计
 
 ### 6.1 主实验：训练期适应
@@ -232,7 +303,7 @@ ETH/UCY 继续按 5 个 held-out fold 分别报告并计算宏平均；SDD 继�
 - [ ] `random_block3` 每个有效行人的缺失集合是唯一连续 3 帧；
 - [ ] `random_block4` 每个有效行人的缺失集合是唯一连续 4 帧；
 - [ ] `random_block6` 每个有效行人的缺失集合恰为 0–5；
-- [ ] 所有新条件的帧 6、7 都为可见；
+- [ ] 所有新条件的帧 6、7 都为可见（**仅适用于 v2**；v3 见 §5.1.5）；
 - [ ] 每个 condition 的有效行人数、样本数和源索引集合与完整源数据一致；
 - [ ] 同一 source sample 在不同 condition 中的未来 12 帧逐位一致；
 - [ ] 实际缺失率与标称值一致：37.5%、50%、75%。
@@ -244,7 +315,7 @@ ETH/UCY 继续按 5 个 held-out fold 分别报告并计算宏平均；SDD 继�
 - [ ] `random_block6` 的 focal 至少有帧 6、7 两个有效位置；
 - [ ] 三个 ETH/UCY 新连续性条件仍保留邻居 actor token；
 - [ ] SDD 新条件的 actor 维度仍为 1；
-- [ ] Dataset → collate → `ModelForecast(use_map=False)` 的输出没有 `NaN` 或 `Inf`；
+- [ ] Dataset → collate → actor-only `ModelForecast` 的输出没有 `NaN` 或 `Inf`；
 - [ ] 未来 12 帧、`target` 和 `target_mask` 没有被掩码污染。
 
 ### 7.3 Manifest
@@ -274,7 +345,6 @@ ETH/UCY 继续按 5 个 held-out fold 分别报告并计算宏平均；SDD 继�
 ## 9. 与 v1 文档的关系
 
 - [ETH/UCY 与 SDD 第一轮缺失历史数据集制作说明](ETHUCY与SDD第一轮缺失历史数据集制作说明.md)：v1 数据格式、轻度缺失条件和已完成的验收口径；
-- [缺失历史第一阶段实验汇总](../results/缺失历史第一阶段汇总.md)：v1 训练期适应结果；
 - [缺失历史数据集 v1 审计](../audits/缺失历史数据集v1审计.md)：v1 数据审计记录。
 
 本方案只扩展未来实验条件，不修改上述 v1 文档所记录的历史事实。

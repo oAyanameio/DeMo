@@ -31,7 +31,7 @@
 - 新增 benchmark 专用预处理器、manifest、dataset/datamodule 配置和 runner。
 - 修正 ETH/UCY 数据字段、mask、坐标变换、指标和 checkpoint 选择逻辑。
 - 为 ETH/UCY 使用显式的 actor-only 配置。
-- 为避免 ETH/UCY 环境依赖阻塞，允许将 AV2 submission import 改为延迟导入。
+- （历史记录，仓库已收缩为行人专用）当时为避免环境依赖阻塞，将上游 AV2 submission import 改为延迟导入。
 - 新增单元测试、集成测试和结果汇总脚本。
 
 ### 1.3 不允许的实验解释
@@ -77,7 +77,7 @@
 3. 当前 Dataset 将 focal 的未来 `target_mask` 强制设为全 `True`，可能把零填充坐标当成标签。
 4. 当前邻居可能只在部分历史帧出现，但仍使用固定末帧位置构造 `x_centers` 和 `x_angles`。
 5. 当前五折脚本把同一场景目录同时用于验证和测试，没有使用独立的官方 val/test 文件。
-6. 当前 `Trainer` 无条件 import AV2 submission，缺少 `av2` 时会阻塞 ETH/UCY 测试。
+6. （历史记录）当时 `Trainer` 无条件 import 上游 AV2 submission，会阻塞 ETH/UCY 测试；现已只保留 SubmissionEthUcy。
 7. 当前环境可能存在 `mamba_ssm` 二进制与系统 glibc/CUDA 不兼容，必须先完成环境 smoke test。
 8. 当前模型输出 6 个 mode，不能直接声称与使用 20 个样本的 `minADE20/minFDE20` 结果等价。
 
@@ -100,7 +100,7 @@
 | 滑窗步长 | 1 个时间步 |
 | 地图 | 不使用 |
 | 输入 | 行人历史轨迹、位移、速度差、方向和社会上下文 |
-| 模型 | `ModelForecast`，`use_map=False` |
+| 模型 | `ModelForecast`（actor-only，仓库收缩后已无 use_map 参数） |
 | mode 数量 | 6 |
 | 主指标 | `minADE1`、`minFDE1`、`minADE6`、`minFDE6`、`MR` |
 | MR 阈值 | 2.0 米 |
@@ -298,7 +298,7 @@ manifest 生成后必须保存原始文件哈希，推荐使用 SHA-256，便于
 - 读取：`requirements.txt`
 - 读取：`git status`
 - 读取：`src/model/layers/mamba/vim_mamba.py`
-- 读取：`src/utils/submission_av2.py`
+- 读取：（已删，上游 AV2 submission 见 DeMo_Origin 存档）
 
 **步骤：**
 
@@ -306,7 +306,7 @@ manifest 生成后必须保存原始文件哈希，推荐使用 SHA-256，便于
 - [ ] 保存执行前的 `git status --short` 到本次运行日志。
 - [ ] 确认 Python、PyTorch、CUDA、Mamba、PyTorch Lightning 版本。
 - [ ] 检查 `mamba_ssm` 是否能成功 import 和完成一次 CPU/GPU 前向。
-- [ ] 检查 `av2` 是否安装；如果未安装，不要为了 ETH/UCY 强制安装 AV2，优先将 AV2 submission import 改为延迟 import。
+- [x] （已完成并超出：仓库收缩时已删除 AV2 submission，Trainer 只保留 ethucy 分支）
 - [ ] 确认 raw root 存在且包含五个 fold 的 `train/val/test` 目录。
 
 **验证命令：**
@@ -617,7 +617,6 @@ model:
   mlp_ratio: 4.0
   qkv_bias: false
   drop_path: 0.2
-  use_map: false
   num_actor_types: 1
   num_modes: 6
 ```
@@ -628,7 +627,7 @@ model:
 - 不新增运动模式编码器。
 - 不新增缺失感知门控。
 - 不新增图像、地图或外部特征。
-- `pretrained_weights` 默认为空，避免 AV2 checkpoint 输入维度和任务定义污染迁移实验。
+- `pretrained_weights` 默认为空，避免上游自动驾驶 checkpoint 输入维度和任务定义污染迁移实验。
 - 保证输出形状：
 
 ```text
@@ -649,9 +648,7 @@ scal:  [B, 6, 12, 2]
 
 如果 `Trainer` 为 ETH/UCY 仍然无条件 import AV2：
 
-- 改成在 `submission_type == "av2"` 分支内延迟 import；
-- 或安装已验证兼容的 `av2`；
-- 不允许因为 ETH/UCY 不需要 AV2 就删除 AV2 功能。
+（历史记录，已过时：仓库收缩为行人专用后，`Trainer` 已只保留 SubmissionEthUcy，上游 AV2 submission 整体移至 DeMo_Origin 存档，下述选项不再适用。）
 
 ---
 
@@ -888,7 +885,7 @@ data_manifest_sha256
 ### 9.2 Dataset/模型验收
 
 - [ ] actor-only forward 成功。
-- [ ] `use_map=False` 时不访问 lane 字段。
+- [x] （已完成并超出：模型已收缩为纯 actor-only，无 lane 分支）
 - [ ] `y_hat` 形状为 `[B, 6, 12, 2]`。
 - [ ] 局部坐标与全局坐标往返误差小于 `1e-5`。
 - [ ] `target_mask` 反映真实有效性。
