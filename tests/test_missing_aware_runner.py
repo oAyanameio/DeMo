@@ -23,6 +23,9 @@ def load_module(rel_path, name):
 
 RUNNER_ETH = load_module("scripts/训练与评估/run_missing_aware_ethucy.py", "ma_ethucy")
 RUNNER_SDD = load_module("scripts/训练与评估/run_missing_aware_sdd.py", "ma_sdd")
+RUNNER_DIRECT = load_module(
+    "scripts/训练与评估/run_trajimpute_experiments.py", "trajimpute_direct_runner"
+)
 
 
 class TestVariantMapping:
@@ -95,6 +98,40 @@ class TestCommandConstruction:
         cmd = RUNNER_ETH.build_train_command("M0_base", "c", "/d", 2024, "ETH", 10, 32, 4,
                                              "bf16", "/tmp/run", resume_ckpt="/tmp/x.ckpt")
         assert "checkpoint=/tmp/x.ckpt" in " ".join(cmd)
+
+    def test_ethucy_k20_command_uses_matching_model_and_monitor(self):
+        train_cmd = RUNNER_ETH.build_train_command(
+            "M0-current", "complete", "/d", 2024, "ETH", 10, 32, 4, "bf16",
+            "/tmp/train", num_modes=20,
+        )
+        eval_cmd = RUNNER_ETH.build_eval_command(
+            "M0-current", "complete", "/d", 2024, "ETH", "bf16",
+            "/tmp/best.ckpt", "/tmp/eval", num_modes=20,
+        )
+        for cmd in (train_cmd, eval_cmd):
+            text = " ".join(cmd)
+            assert "model.target.model.num_modes=20" in text
+            assert "monitor=val_minFDE20" in text
+
+    def test_checkpoint_selection_uses_best_val_minfde20(self, tmp_path):
+        train_dir = tmp_path / "train"
+        metrics_dir = train_dir / "logs" / "version_0"
+        checkpoints = train_dir / "checkpoints"
+        metrics_dir.mkdir(parents=True)
+        checkpoints.mkdir()
+        (metrics_dir / "metrics.csv").write_text(
+            "epoch,val_minFDE20\n0,2.0\n1,0.8\n2,1.1\n"
+        )
+        (checkpoints / "epoch=0.ckpt").write_bytes(b"0")
+        (checkpoints / "epoch=1.ckpt").write_bytes(b"1")
+        (checkpoints / "epoch=2.ckpt").write_bytes(b"2")
+
+        epoch, value, checkpoint = RUNNER_DIRECT.select_best_checkpoint(
+            train_dir, "val_minFDE20"
+        )
+
+        assert (epoch, value) == (1, 0.8)
+        assert checkpoint == str(checkpoints / "epoch=1.ckpt")
 
 
 class TestOutputDir:
@@ -182,6 +219,26 @@ class TestResumeSafety:
                                        "use_missing_summary": True})
         with pytest.raises(SystemExit, match="不在本实验目录内"):
             RUNNER_ETH.verify_resume(outside, args, "ETH", tmp_path)
+
+    def test_k20_refuses_k6_checkpoint(self, tmp_path, monkeypatch):
+        args = make_args(RUNNER_ETH, tmp_path, variant="M0-current",
+                         condition="complete", num_modes=20)
+        exp = RUNNER_ETH.exp_dir_for(args.output_root, "M0-current", "complete", 2024)
+        ckpt = exp / "fold_ETH" / "train" / "checkpoints" / "epoch=1.ckpt"
+        ckpt.parent.mkdir(parents=True)
+        ckpt.write_bytes(b"x")
+        monkeypatch.setattr(
+            RUNNER_ETH,
+            "load_ckpt_model_flags",
+            lambda path: {
+                "use_observation_features": False,
+                "use_missing_summary": False,
+                "use_motion_features": False,
+                "num_modes": 6,
+            },
+        )
+        with pytest.raises(SystemExit, match="num_modes=6.*期望 20"):
+            RUNNER_ETH.verify_resume(ckpt, args, "ETH", exp / "fold_ETH")
 
 
 class TestFailureHandling:

@@ -51,6 +51,12 @@ class TestTopLevelCompose:
         assert cfg.monitor == "val_minFDE20"
         assert cfg.datamodule.target._target_.endswith("SddMissingDataModule")
 
+    def test_trajimpute_direct_compose_uses_k20(self):
+        cfg = compose("config_missing_aware_trajimpute")
+        assert cfg.model.target.model.num_modes == 20
+        assert cfg.monitor == "val_minFDE20"
+        assert cfg.datamodule.target._target_.endswith("TrajImputeDataModule")
+
     def test_shared_model_params(self):
         e = compose("config_missing_aware_ethucy").model.target.model
         s = compose("config_missing_aware_sdd").model.target.model

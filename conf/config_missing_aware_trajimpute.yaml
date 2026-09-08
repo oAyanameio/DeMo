@@ -1,0 +1,60 @@
+# TrajImpute 直接缺失预测最小配置（M0 默认；M1/M2 经 override 开启）。
+# 用法（单场景 smoke）：
+#   PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
+#     scene=ETH-M difficulty=Easy hydra.run.dir=outputs/trajimpute_smoke/M0_Easy
+defaults:
+  - datamodule: trajimpute
+  - model: missing_aware_ethucy_model_forecast
+  - _self_
+
+hydra:
+  run:
+    dir: outputs/${output}/${now:%Y%m%d-%H%M%S}
+
+seed: 2024
+scene: ETH-M
+difficulty: Easy
+monitor: val_minFDE20
+save_top_k: 1
+
+data_root: /home/lbh/TrajImpute/dataset/TrajImpute
+# 仅用于 TrajImpute Easy/Hard direct；zero_missing_only 只允许诊断运行。
+# 正式 Clean-direct 使用 config_missing_aware_ethucy + ETHUCY_benchmark_v1。
+zero_missing_only: false
+checkpoint:
+pretrained_weights:
+output: trajimpute_${model_version}_${scene}_${difficulty}${clean_suffix}
+clean_suffix: ''
+
+# trainer
+num_workers: 4
+gpus: 1
+sync_bn: false
+batch_size: 64
+epochs: 100
+warmup_epochs: 5
+precision: bf16
+# backbone 开关：P0 需要单向（false）/双向（true）对照
+bimamba: true
+
+# optimizer
+lr: 0.001
+weight_decay: 0.0001
+gradient_clip_val: 5
+gradient_clip_algorithm: norm
+
+limit_train_batches:
+limit_val_batches:
+limit_test_batches:
+log_model: all
+test: false
+
+# 模型版本标签（仅用于 output 命名）：0/1/2 对应 M0/M1/M2
+model_version: '0'
+
+# TrajImpute 原始评估脚本使用 best-of-20；该覆盖只作用于 direct 配置，
+# 历史 ETH/UCY train_adapt 配置保持 K=6。
+model:
+  target:
+    model:
+      num_modes: 20

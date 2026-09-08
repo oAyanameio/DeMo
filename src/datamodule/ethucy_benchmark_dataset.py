@@ -13,6 +13,7 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
 from .missing_features import build_missing_features
+from .b1_motion_features import build_b1_motion_features
 
 
 def compute_theta(hist_pos: torch.Tensor, hist_valid: torch.Tensor, eps: float = 1e-4):
@@ -90,15 +91,11 @@ class EthUcyBenchmarkDataset(Dataset):
         diff_mask = hist_valid[:, :-1] & hist_valid[:, 1:]
         x_positions_diff[:, 1:] *= diff_mask.unsqueeze(-1)
 
-        velocity = torch.zeros(N, obs_len)
-        velocity[:, 1:] = torch.norm(hist_pos[:, 1:] - hist_pos[:, :-1], dim=-1)
-        velocity[:, 1:] *= diff_mask.float()
-
-        # velocity_diff[t] 需要 t 与 t-1 两步的位移都有效（velocity[t-1] 对应步 t-2→t-1）
-        x_velocity_diff = torch.zeros_like(velocity)
-        x_velocity_diff[:, 1:] = velocity[:, 1:] - velocity[:, :-1]
-        both_steps = diff_mask[:, 1:] & diff_mask[:, :-1]  # [A, obs_len-2]
-        x_velocity_diff[:, 2:] = x_velocity_diff[:, 2:] * both_steps.float()
+        # B1 运动证据：跨缺口语义（与 trajimpute_dataset 共用同一纯函数，
+        # 2026-09-08 统一）。完整历史下与旧相邻帧实现数值一致（s=t-1）。
+        x_velocity, x_velocity_diff, x_turn_rate = build_b1_motion_features(
+            hist_pos, hist_valid
+        )
 
         # x_centers / x_angles：只用有效帧
         last_valid_idx = []
@@ -150,7 +147,8 @@ class EthUcyBenchmarkDataset(Dataset):
         target_diff *= tdiff_mask.unsqueeze(-1)
 
         vel_future = torch.norm(target_diff, dim=-1)
-        vel_padded = torch.cat([velocity[:, -1:], vel_future], dim=1)
+        start_vel = x_velocity[torch.arange(N), x_last_valid_idx].unsqueeze(1)  # [N,1]
+        vel_padded = torch.cat([start_vel, vel_future], dim=1)
         target_vel_diff = vel_padded[:, 1:] - vel_padded[:, :-1]
         target_vel_diff *= tdiff_mask.float()
 
@@ -167,8 +165,10 @@ class EthUcyBenchmarkDataset(Dataset):
             "x_attr": x_attr,
             "x_centers": x_centers,
             "x_angles": x_angles,
-            "x_velocity": velocity,
+            "x_velocity": x_velocity,
             "x_velocity_diff": x_velocity_diff,
+            "x_accel": x_velocity_diff,
+            "x_turn_rate": x_turn_rate,
             "x_valid_mask": hist_valid,
             "x_key_valid_mask": hist_valid.any(-1),
             "x_last_valid_angle": x_last_valid_angle,
@@ -194,6 +194,7 @@ def ethucy_benchmark_collate_fn(batch):
     for key in [
         "x_positions_diff", "x_attr", "x_positions", "x_centers",
         "x_angles", "x_velocity", "x_velocity_diff",
+        "x_accel", "x_turn_rate",
         "x_last_valid_angle", "x_last_valid_idx",
         "x_anchor_lag_steps", "x_forecast_gap_steps",
         "x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run",

@@ -1,11 +1,12 @@
-"""Missing-Aware ETH/UCY 正式实验 Runner（M0/M1/M2，训练适应协议）。
+"""Missing-Aware ETH/UCY 实验 Runner（完整数据或历史缺失协议）。
 
 协议（方案《缺失感知模型构建与实验验证方案》§5.1 / 任务 5）：
 - variant -> 模型开关由本 Runner 固定映射，禁止手工传开关；
-- 每折：fold train -> val_minFDE6 选 checkpoint -> 同折 test 评估一次；
+- 每折：fold train -> 按 `num_modes` 对应的 val_minFDE 选 checkpoint -> 同折 test 评估一次；
 - 不用 test 指标选 epoch；M1/M2 默认从零训练；
 - --resume-checkpoint 仅限同 variant/condition/seed/fold 的中断恢复；
 - 五折输出 + results.json/csv + experiment_meta.json（running->complete/failed）。
+- `clean-direct` 只能读取完整 `data/ETHUCY_benchmark_v1`，不得指向缺失数据目录。
 
 用法示例：
   CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python scripts/训练与评估/run_missing_aware_ethucy.py \
@@ -31,19 +32,43 @@ REPO = Path(__file__).resolve().parents[2]
 PY = sys.executable
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 CONFIG_NAME = "config_missing_aware_ethucy"
-MONITOR = "val_minFDE6"
-TEST_KEYS = ["test_minADE1", "test_minFDE1", "test_minADE6", "test_minFDE6",
-             "test_MR", "test_b-minFDE6"]
+DEFAULT_NUM_MODES = 6
 
-# variant -> 模型开关固定映射（唯一事实来源）
+
+def metric_names(num_modes=DEFAULT_NUM_MODES):
+    return {
+        "monitor": f"val_minFDE{num_modes}",
+        "test": [
+            "test_minADE1", "test_minFDE1",
+            f"test_minADE{num_modes}", f"test_minFDE{num_modes}",
+            "test_MR", f"test_b-minFDE{num_modes}",
+        ],
+    }
+
+
+MONITOR = metric_names()["monitor"]
+TEST_KEYS = metric_names()["test"]
+
+
+# variant -> 缺失感知模型开关固定映射（唯一事实来源）
 VARIANTS = {
     "M0_base": {"use_observation_features": False, "use_missing_summary": False},
+    "M0-current": {"use_observation_features": False, "use_missing_summary": False},
+    "B0": {"use_observation_features": False, "use_missing_summary": False},
+    "B1": {"use_observation_features": False, "use_missing_summary": False},
     "M1_obs": {"use_observation_features": True, "use_missing_summary": False},
     "M2_history": {"use_observation_features": True, "use_missing_summary": True},
 }
+
+# B1 的通用运动证据开关单独维护，保持历史 M0/M1/M2 API 兼容。
+MOTION_FEATURE_VARIANTS = {"B1"}
+
 # variant -> (hist_embed_mlp.in_features, 是否存在 missing_summary_embed)
 EXPECTED = {
     "M0_base": (4, False),
+    "M0-current": (4, False),
+    "B0": (4, False),
+    "B1": (8, False),
     "M1_obs": (8, False),
     "M2_history": (8, True),
 }
@@ -51,7 +76,8 @@ EXPECTED = {
 
 # ---------------------------------------------------------------- 命令构造（纯函数，供测试）
 def build_train_overrides(variant, condition, data_root, seed, fold,
-                          epochs, batch_size, num_workers, precision):
+                          epochs, batch_size, num_workers, precision, bimamba=True,
+                          num_modes=DEFAULT_NUM_MODES, lr=None, weight_decay=None):
     ov = [
         f"fold={fold}",
         f"data_root={data_root}",
@@ -60,18 +86,30 @@ def build_train_overrides(variant, condition, data_root, seed, fold,
         f"batch_size={batch_size}",
         f"num_workers={num_workers}",
         f"precision={precision}",
+        f"bimamba={str(bimamba).lower()}",
+        f"monitor=val_minFDE{num_modes}",
+        f"model.target.model.num_modes={num_modes}",
         f"model.target.model.use_observation_features={VARIANTS[variant]['use_observation_features']}".lower(),
         f"model.target.model.use_missing_summary={VARIANTS[variant]['use_missing_summary']}".lower(),
+        f"model.target.model.use_motion_features={str(variant in MOTION_FEATURE_VARIANTS).lower()}",
         "model.target.model.use_gap_condition=false",
     ]
+    # 显式透传优化器超参（manifest 与实际训练值一致性；None=用 config 默认）
+    if lr is not None:
+        ov.append(f"lr={lr}")
+    if weight_decay is not None:
+        ov.append(f"weight_decay={weight_decay}")
     return ov
 
 
 def build_train_command(variant, condition, data_root, seed, fold, epochs,
-                        batch_size, num_workers, precision, run_dir, resume_ckpt=None):
+                        batch_size, num_workers, precision, run_dir, resume_ckpt=None,
+                        bimamba=True, num_modes=DEFAULT_NUM_MODES,
+                        lr=None, weight_decay=None):
     cmd = [PY, "-u", "train.py", f"--config-name={CONFIG_NAME}"]
     cmd += build_train_overrides(variant, condition, data_root, seed, fold,
-                                 epochs, batch_size, num_workers, precision)
+                                 epochs, batch_size, num_workers, precision,
+                                 bimamba, num_modes, lr=lr, weight_decay=weight_decay)
     if resume_ckpt is not None:
         cmd.append(f"checkpoint={resume_ckpt}")
     cmd.append(f"hydra.run.dir={run_dir}")
@@ -79,13 +117,17 @@ def build_train_command(variant, condition, data_root, seed, fold, epochs,
 
 
 def build_eval_command(variant, condition, data_root, seed, fold, precision,
-                       ckpt_link, eval_dir):
+                       ckpt_link, eval_dir, bimamba=True,
+                       num_modes=DEFAULT_NUM_MODES):
     return [
         PY, "-u", "eval.py", f"--config-name={CONFIG_NAME}",
         f"fold={fold}", f"data_root={data_root}", f"seed={seed}",
-        f"precision={precision}", "test=true",
+        f"precision={precision}", f"bimamba={str(bimamba).lower()}", "test=true",
+        f"monitor=val_minFDE{num_modes}",
+        f"model.target.model.num_modes={num_modes}",
         f"model.target.model.use_observation_features={str(VARIANTS[variant]['use_observation_features']).lower()}",
         f"model.target.model.use_missing_summary={str(VARIANTS[variant]['use_missing_summary']).lower()}",
+        f"model.target.model.use_motion_features={str(variant in MOTION_FEATURE_VARIANTS).lower()}",
         f"model.target.model.use_gap_condition=false",
         f"checkpoint={ckpt_link}",
         f"hydra.run.dir={eval_dir}",
@@ -118,8 +160,9 @@ def read_best_val(metrics_csv, monitor=MONITOR):
     return best
 
 
-def collect_best_checkpoint(run_dir, monitor=MONITOR):
+def collect_best_checkpoint(run_dir, monitor=None, num_modes=DEFAULT_NUM_MODES):
     """合并所有 version_* 的 metrics.csv，取全集最小 val 指标的 epoch 与 checkpoint。"""
+    monitor = monitor or metric_names(num_modes)["monitor"]
     all_metrics = sorted(glob.glob(os.path.join(run_dir, "logs", "version_*", "metrics.csv")))
     assert all_metrics, f"metrics.csv not found under {run_dir}"
     best = None
@@ -139,7 +182,8 @@ def collect_best_checkpoint(run_dir, monitor=MONITOR):
     return best_epoch, best_val, ckpt
 
 
-def parse_test_metrics(eval_log, keys=TEST_KEYS):
+def parse_test_metrics(eval_log, keys=None, num_modes=DEFAULT_NUM_MODES):
+    keys = keys or metric_names(num_modes)["test"]
     text = open(eval_log).read()
     m = re.search(r"TEST METRICS: (\{.*\})", text)
     assert m, "TEST METRICS not found in eval log"
@@ -170,29 +214,44 @@ def git_state(repo=REPO):
 
 def write_meta(exp_dir, args, status, extra=None):
     rev, dirty = git_state()
+    protocol = getattr(args, "protocol", "train_adapt")
+    model_flags = {
+        "use_observation_features": VARIANTS[args.variant]["use_observation_features"],
+        "use_missing_summary": VARIANTS[args.variant]["use_missing_summary"],
+        "use_gap_condition": False,
+    }
+    if args.variant in MOTION_FEATURE_VARIANTS:
+        model_flags["use_motion_features"] = True
+    data_source = {
+        "type": "original_ethucy_complete"
+        if protocol == "clean-direct" else "ethucy_missing_or_custom",
+        "data_root": str(args.data_root),
+        "condition": args.condition,
+        "clean_protocol_requires_complete_root": protocol == "clean-direct",
+    }
+    num_modes = getattr(args, "num_modes", DEFAULT_NUM_MODES)
     meta = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "git_revision": rev,
         "git_dirty": dirty,
         "dataset": "ETHUCY",
-        "protocol": "train_adapt",
+        "protocol": protocol,
         "variant": args.variant,
         "condition": args.condition,
         "data_root": str(args.data_root),
         "seed": args.seed,
         "folds": list(args.folds),
         "config_name": CONFIG_NAME,
-        "model_flags": {
-            "use_observation_features": VARIANTS[args.variant]["use_observation_features"],
-            "use_missing_summary": VARIANTS[args.variant]["use_missing_summary"],
-            "use_gap_condition": False,
-        },
+        "model_flags": model_flags,
+        "data_source": data_source,
+        "backbone": {"bimamba": getattr(args, "bimamba", True)},
+        "num_modes": getattr(args, "num_modes", DEFAULT_NUM_MODES),
         "model_parameters": getattr(args, "_model_parameters", None),
         "hist_input_dim": EXPECTED[args.variant][0],
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "precision": args.precision,
-        "checkpoint_monitor": MONITOR,
+        "checkpoint_monitor": metric_names(num_modes)["monitor"],
         "command": " ".join(sys.argv),
         "status": status,
     }
@@ -236,16 +295,25 @@ def verify_variant_config(args):
     """启动前检查：resolved Hydra 配置 + 实例化模型与 variant 一致，否则立即停止。"""
     ov = build_train_overrides(args.variant, args.condition, str(args.data_root),
                                args.seed, FOLDS[0], args.epochs, args.batch_size,
-                               args.num_workers, args.precision)
+                               args.num_workers, args.precision,
+                               getattr(args, "bimamba", True),
+                               getattr(args, "num_modes", DEFAULT_NUM_MODES))
     cfg = compose_cfg(ov)
     m = cfg.model.target.model
-    flags_ok = (bool(m.use_observation_features) == VARIANTS[args.variant]["use_observation_features"]
-                and bool(m.use_missing_summary) == VARIANTS[args.variant]["use_missing_summary"])
+    expected_motion = args.variant in MOTION_FEATURE_VARIANTS
+    flags_ok = (
+        bool(m.use_observation_features)
+        == VARIANTS[args.variant]["use_observation_features"]
+        and bool(m.use_missing_summary)
+        == VARIANTS[args.variant]["use_missing_summary"]
+        and bool(getattr(m, "use_motion_features", False)) == expected_motion
+    )
     for forbidden in ("condition_state_query", "condition_mode_query", "condition_hybrid"):
         assert forbidden not in m, f"配置中出现未实现参数 {forbidden}"
     if not flags_ok:
         sys.exit(f"CONFIG MISMATCH: variant={args.variant} 期望 {VARIANTS[args.variant]}, "
-                 f"resolved: uof={m.use_observation_features}, ums={m.use_missing_summary}")
+                 f"resolved: uof={m.use_observation_features}, "
+                 f"ums={m.use_missing_summary}, motion={getattr(m, 'use_motion_features', False)}")
     # 实例化检查（真实构造 Trainer/net，验证 hist 维度与 missing_summary_embed 存在性）
     from hydra.utils import instantiate
     trainer = instantiate(cfg.model.target)
@@ -256,9 +324,19 @@ def verify_variant_config(args):
     if hist_in != exp_in or has_summary != exp_summary:
         sys.exit(f"MODEL MISMATCH: variant={args.variant} 期望 hist_in={exp_in}, "
                  f"summary={exp_summary}; 实际 hist_in={hist_in}, summary={has_summary}")
+    expected_modes = getattr(args, "num_modes", DEFAULT_NUM_MODES)
+    if int(m.num_modes) != expected_modes:
+        sys.exit(
+            f"MODEL MISMATCH: variant={args.variant} 期望 num_modes={expected_modes}; "
+            f"实际 num_modes={m.num_modes}"
+        )
     args._model_parameters = sum(p.numel() for p in net.parameters())
     print(f"[config-check] variant={args.variant} hist_in={hist_in} "
           f"missing_summary_embed={has_summary} params={args._model_parameters}")
+    has_motion = bool(getattr(net, "use_motion_features", False))
+    if has_motion != expected_motion:
+        sys.exit(f"MODEL MISMATCH: variant={args.variant} 期望 motion={expected_motion}; "
+                 f"实际 motion={has_motion}")
     return hist_in, has_summary
 
 
@@ -270,6 +348,8 @@ def load_ckpt_model_flags(ckpt_path):
     return {
         "use_observation_features": model.get("use_observation_features", False),
         "use_missing_summary": model.get("use_missing_summary", False),
+        "use_motion_features": model.get("use_motion_features", False),
+        "num_modes": model.get("num_modes", DEFAULT_NUM_MODES),
     }
 
 
@@ -280,10 +360,22 @@ def verify_resume(ckpt_path, args, fold, fold_dir):
         sys.exit(f"RESUME REFUSED: checkpoint 不存在: {ckpt_path}")
     flags = load_ckpt_model_flags(ckpt_path)
     want = VARIANTS[args.variant]
-    if (bool(flags["use_observation_features"]) != want["use_observation_features"]
-            or bool(flags["use_missing_summary"]) != want["use_missing_summary"]):
+    if (
+        bool(flags.get("use_observation_features", False))
+        != want["use_observation_features"]
+        or bool(flags.get("use_missing_summary", False))
+        != want["use_missing_summary"]
+        or bool(flags.get("use_motion_features", False))
+        != (args.variant in MOTION_FEATURE_VARIANTS)
+    ):
         sys.exit(f"RESUME REFUSED: checkpoint 模型开关 {flags} 与 variant={args.variant} "
                  f"期望 {want} 不一致（禁止跨 variant 恢复，含 M0->M1/M2）")
+    wanted_modes = getattr(args, "num_modes", DEFAULT_NUM_MODES)
+    if int(flags.get("num_modes", DEFAULT_NUM_MODES)) != wanted_modes:
+        sys.exit(
+            f"RESUME REFUSED: checkpoint num_modes={flags.get('num_modes')} "
+            f"与当前协议期望 {wanted_modes}"
+        )
     # condition/seed/fold 一致性：checkpoint 必须位于本实验目录本折的 train run 内，
     # 且该 run 的 hydra overrides 记录了相同 data_root/seed/fold
     exp_root = exp_dir_for(args.output_root, args.variant, args.condition, args.seed).resolve()
@@ -317,7 +409,9 @@ def run_fold(fold, args):
         "variant": args.variant, **VARIANTS[args.variant],
         "hist_embed_mlp.in_features": EXPECTED[args.variant][0],
         "condition": args.condition, "data_root": str(args.data_root),
-        "seed": args.seed, "fold": fold, "config_name": CONFIG_NAME,
+        "seed": args.seed, "fold": fold, "bimamba": getattr(args, "bimamba", True),
+        "num_modes": getattr(args, "num_modes", DEFAULT_NUM_MODES),
+        "config_name": CONFIG_NAME,
     }, ensure_ascii=False), flush=True)
 
     resume_ckpt = None
@@ -330,7 +424,11 @@ def run_fold(fold, args):
         rc = sh(build_train_command(args.variant, args.condition, str(args.data_root),
                                     args.seed, fold, args.epochs, args.batch_size,
                                     args.num_workers, args.precision, str(fold_dir / "train"),
-                                    resume_ckpt=resume_ckpt),
+                                    resume_ckpt=resume_ckpt,
+                                    bimamba=getattr(args, "bimamba", True),
+                                    num_modes=getattr(args, "num_modes", DEFAULT_NUM_MODES),
+                                    lr=getattr(args, "lr", None),
+                                    weight_decay=getattr(args, "weight_decay", None)),
                 train_log)
         train_seconds = time.time() - t0
         if rc != 0:
@@ -340,42 +438,52 @@ def run_fold(fold, args):
 
     run_dir = str(fold_dir / "train")
     try:
-        best_epoch, best_val, ckpt = collect_best_checkpoint(run_dir)
+        best_epoch, best_val, ckpt = collect_best_checkpoint(
+            run_dir, num_modes=getattr(args, "num_modes", DEFAULT_NUM_MODES)
+        )
     except AssertionError as e:
         return {"fold": fold, "status": f"checkpoint_missing: {e}"}
 
-    # symlink 规避路径中的 '='（Hydra override 语法限制）
+    # symlink 规避路径中的 '='（Hydra override 语法限制）。
+    # 目标必须相对 link 自身目录（train/checkpoints/...），否则从 fold 目录
+    # 解析时断裂（相对 REPO 的路径仅在 cwd=REPO 时有效）。
     link = fold_dir / "best_for_eval.ckpt"
     if link.exists() or link.is_symlink():
         link.unlink()
-    link.symlink_to(ckpt)
+    link.symlink_to(Path("train/checkpoints") / Path(ckpt).name)
 
     t0 = time.time()
     rc = sh(build_eval_command(args.variant, args.condition, str(args.data_root), args.seed,
-                               fold, args.precision, str(link), str(fold_dir / "eval")),
+                               fold, args.precision, str(link), str(fold_dir / "eval"),
+                               bimamba=getattr(args, "bimamba", True),
+                               num_modes=getattr(args, "num_modes", DEFAULT_NUM_MODES)),
             eval_log)
     eval_seconds = time.time() - t0
     if rc != 0:
         return {"fold": fold, "status": f"eval_failed_rc{rc}"}
 
     try:
-        metrics = parse_test_metrics(eval_log)
+        metrics = parse_test_metrics(
+            eval_log, num_modes=getattr(args, "num_modes", DEFAULT_NUM_MODES)
+        )
     except AssertionError as e:
         return {"fold": fold, "status": f"metrics_parse_failed: {e}"}
 
     row = {
         "dataset": "ETHUCY",
-        "protocol": "train_adapt",
+        "protocol": getattr(args, "protocol", "train_adapt"),
         "variant": args.variant,
         "condition": args.condition,
         "seed": args.seed,
         "fold": fold,
         "config_name": CONFIG_NAME,
+        "bimamba": getattr(args, "bimamba", True),
         "use_observation_features": VARIANTS[args.variant]["use_observation_features"],
         "use_missing_summary": VARIANTS[args.variant]["use_missing_summary"],
+        "use_motion_features": args.variant in MOTION_FEATURE_VARIANTS,
         "checkpoint_epoch": best_epoch,
         "checkpoint_path": ckpt,
-        "val_minFDE6": best_val,
+        f"val_minFDE{getattr(args, 'num_modes', DEFAULT_NUM_MODES)}": best_val,
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "precision": args.precision,
@@ -383,7 +491,9 @@ def run_fold(fold, args):
         "eval_seconds": round(eval_seconds, 1),
         "status": "ok",
     }
-    row.update({k: round(float(metrics[k]), 4) for k in TEST_KEYS})
+    row.update({k: round(float(metrics[k]), 4) for k in metric_names(
+        getattr(args, "num_modes", DEFAULT_NUM_MODES)
+    )["test"]})
     with open(fold_dir / "fold_result.json", "w") as f:
         json.dump(row, f, indent=2, ensure_ascii=False)
     return row
@@ -399,18 +509,25 @@ def summarize(exp_dir, rows, args):
 
     summary = {
         "dataset": "ETHUCY",
-        "protocol": "train_adapt",
+        "protocol": getattr(args, "protocol", "train_adapt"),
         "variant": args.variant,
         "condition": args.condition,
         "seed": args.seed,
         "config_name": CONFIG_NAME,
-        "model_flags": VARIANTS[args.variant],
+        "backbone": {"bimamba": getattr(args, "bimamba", True)},
+        "num_modes": getattr(args, "num_modes", DEFAULT_NUM_MODES),
+        "model_flags": {
+            **VARIANTS[args.variant],
+            "use_motion_features": args.variant in MOTION_FEATURE_VARIANTS,
+        },
         "rows": rows,
         "folds_ok": n_ok,
         "folds_failed": n_total - n_ok,
         "status": status,
     }
-    for k in ("test_minADE6", "test_minFDE6", "test_MR", "test_b-minFDE6", "val_minFDE6"):
+    modes = getattr(args, "num_modes", DEFAULT_NUM_MODES)
+    for k in (f"test_minADE{modes}", f"test_minFDE{modes}",
+              "test_MR", f"test_b-minFDE{modes}", f"val_minFDE{modes}"):
         vals = [r[k] for r in ok_rows if k in r]
         if vals:
             mean = sum(vals) / len(vals)
@@ -420,9 +537,10 @@ def summarize(exp_dir, rows, args):
     with open(exp_dir / "results.json", "w") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
 
-    fields = ["fold", "seed", "variant", "checkpoint_epoch", "val_minFDE6",
-              "test_minADE1", "test_minFDE1", "test_minADE6", "test_minFDE6",
-              "test_MR", "test_b-minFDE6", "status"]
+    fields = ["fold", "seed", "variant", "checkpoint_epoch",
+              f"val_minFDE{modes}", "test_minADE1", "test_minFDE1",
+              f"test_minADE{modes}", f"test_minFDE{modes}",
+              "test_MR", f"test_b-minFDE{modes}", "status"]
     with open(exp_dir / "results.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
@@ -433,12 +551,22 @@ def summarize(exp_dir, rows, args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--variant", required=True, choices=sorted(VARIANTS))
+    ap.add_argument("--protocol", default="train_adapt",
+                    choices=["train_adapt", "clean-direct"],
+                    help="clean-direct 仅允许使用完整 ETH/UCY benchmark")
     ap.add_argument("--condition", required=True)
     ap.add_argument("--data-root", required=True,
                     help="condition 目录，如 data/ETHUCY_missing_v3_noguard/random_fixed4_ng")
     ap.add_argument("--output-root", default="outputs/missing_aware/ethucy/train_adapt")
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--gpu", type=int, default=0)
+    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--num-modes", type=int, default=DEFAULT_NUM_MODES,
+                    choices=[6, 20])
+    ap.add_argument("--lr", type=float, default=None,
+                    help="显式学习率；None=用 config 默认（保证 manifest 与实际一致）")
+    ap.add_argument("--weight-decay", type=float, default=None,
+                    help="显式 weight decay；None=用 config 默认")
     ap.add_argument("--folds", nargs="+", default=FOLDS, choices=FOLDS)
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--batch-size", type=int, default=64)
@@ -452,6 +580,26 @@ def main():
     if not args.data_root.is_absolute():
         args.data_root = (REPO / args.data_root).resolve()
     assert args.data_root.exists(), f"data_root 不存在: {args.data_root}"
+    expected_modes = 20 if args.protocol == "clean-direct" else DEFAULT_NUM_MODES
+    if args.num_modes != expected_modes:
+        raise SystemExit(
+            f"协议 {args.protocol} 固定 num_modes={expected_modes}，"
+            f"收到 {args.num_modes}"
+        )
+    if args.protocol == "clean-direct":
+        manifest_path = args.data_root / "manifest.json"
+        if not manifest_path.exists():
+            raise SystemExit(
+                "clean-direct 要求 data_root 是完整 ETH/UCY benchmark，"
+                f"缺少 manifest.json: {manifest_path}"
+            )
+        manifest = json.loads(manifest_path.read_text())
+        if manifest.get("version") != "ethucy_benchmark_v1" or \
+                manifest.get("context_policy") != "strict_complete":
+            raise SystemExit(
+                "clean-direct 拒绝非完整 ETH/UCY 数据根目录；"
+                "需要 version=ethucy_benchmark_v1 且 context_policy=strict_complete"
+            )
 
     exp_dir = exp_dir_for(args.output_root, args.variant, args.condition, args.seed)
     check_overwrite(exp_dir, args)

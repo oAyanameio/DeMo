@@ -1,0 +1,19 @@
+name: trajimpute
+phase: default
+
+target:
+  _target_: src.datamodule.trajimpute_dataset.TrajImputeDataModule
+
+  data_root: ${data_root}
+  scene: ${scene}
+  difficulty: ${difficulty}
+  obs_len: 8
+  pred_len: 12
+  train_batch_size: ${batch_size}
+  val_batch_size: ${batch_size}
+  test_batch_size: ${batch_size}
+  num_workers: ${num_workers}
+  pin_memory: True
+  test: ${test}
+  # 零缺失筛选仅用于 TrajImpute 数据诊断，不是 Clean-direct 数据源。
+  zero_missing_only: ${zero_missing_only}

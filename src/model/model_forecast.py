@@ -31,8 +31,14 @@ class ModelForecast(nn.Module):
         use_gap_condition: bool = False,
         use_observation_features: bool = False,
         use_missing_summary: bool = False,
+        use_motion_features: bool = False,
     ) -> None:
         super().__init__()
+        # B1（P0.5 运动证据增强）：历史输入追加 4 维有效运动统计
+        # [x_velocity, x_accel, x_turn_rate, x_motion_run/(obs_len-1)]，
+        # 全部由历史窗口内有效观测派生（跨缺口归一化速度、其变化率、
+        # 相邻有效步航向变化率、连续有效运动长度）。默认关闭 = M0-current。
+        self.use_motion_features = use_motion_features
         # v3 缺失感知条件化通路（默认关闭：参数集与既有 checkpoint 完全一致）。
         # 开启时 focal forecast_gap_steps 经 MLP 融入 time embedding（State Query
         # 初始化路径），并输出 focal_anchor_lag/forecast_gap 供 Mode Query 与
@@ -48,7 +54,8 @@ class ModelForecast(nn.Module):
         #  x_motion_run/(obs_len-1)]，输入维度 4 -> 8。
         self.use_observation_features = use_observation_features
         self.obs_len = obs_len
-        hist_input_dim = 4 + (4 if use_observation_features else 0)
+        hist_input_dim = 4 + (4 if use_observation_features else 0) \
+            + (4 if use_motion_features else 0)
 
         # M2_history（方案 §3.1/§2.6）：x_missing_summary -> embed_dim 条件向量，
         # 加到历史 actor token（TypeEmbedding 之后、场景编码之前）。
@@ -179,6 +186,25 @@ class ModelForecast(nn.Module):
                 data["x_motion_run"][..., None] / (obs_len - 1),
             ])
         hist_feat = torch.cat(hist_feat_parts, dim=-1)
+
+        # B1：追加 4 维有效运动统计（P0.5；trajimpute/missing 数据集提供）
+        if self.use_motion_features:
+            missing_keys = [k for k in
+                            ("x_velocity", "x_accel", "x_turn_rate", "x_motion_run")
+                            if k not in data]
+            if missing_keys:
+                raise ValueError(
+                    f"use_motion_features=True requires batch fields "
+                    f"{missing_keys} (enable via trajimpute/missing-aware datasets)"
+                )
+            obs_len_m = self.obs_len
+            hist_feat_parts.extend([
+                data["x_velocity"][..., None],
+                data["x_accel"][..., None],
+                data["x_turn_rate"][..., None],
+                data["x_motion_run"][..., None] / (obs_len_m - 1),
+            ])
+            hist_feat = torch.cat(hist_feat_parts, dim=-1)
 
         B, N, L, D = hist_feat.shape
         hist_feat = hist_feat.view(B * N, L, D)

@@ -15,7 +15,7 @@ done
 
 echo "[$(date '+%F %T')] M0 ZARA2 train 进程已结束，开始 eval+汇总" >> "$LOG/chain_random_fixed4_ng_seed2024.log"
 # ZARA2 的 train run 目录已在，runner skip-train 会重新收集 best ckpt 并 eval
-CUDA_VISIBLE_DEVICES=1 PYTHONPATH=. "$PY" scripts/训练与评估/run_missing_aware_ethucy.py \
+CUDA_VISIBLE_DEVICES=3 PYTHONPATH=. "$PY" scripts/训练与评估/run_missing_aware_ethucy.py \
   --variant M0_base \
   --condition random_fixed4_ng \
   --data-root data/ETHUCY_missing_v3_noguard/random_fixed4_ng \
