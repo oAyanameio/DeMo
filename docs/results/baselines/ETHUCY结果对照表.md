@@ -40,7 +40,7 @@
 
 ## 相关文件
 
-- 主报告：results/MoFlow与DeMo留出测试对比.md
-- 数值 CSV：results/MoFlow与DeMo留出测试数据.csv
+- 主报告：[MoFlow与DeMo留出测试对比](MoFlow与DeMo留出测试对比.md)
+- 数值 CSV：[MoFlow与DeMo留出测试数据](MoFlow与DeMo留出测试数据.csv)
 - 公开数字来源：research/ETHUCY公开资料.md
 - 重跑取证日志：audits/留出测试复核日志.log

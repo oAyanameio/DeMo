@@ -83,6 +83,6 @@ CUDA_VISIBLE_DEVICES=1 conda run -n DeMo python -u scripts/训练与评估/run_s
 
 ## 相关文件
 
-- ETH/UCY 主报告：`MoFlow与DeMo留出测试对比.md`
-- ETH/UCY 对照表：`ETHUCY结果对照表.md`
+- ETH/UCY 主报告：[MoFlow与DeMo留出测试对比](MoFlow与DeMo留出测试对比.md)
+- ETH/UCY 对照表：[ETHUCY结果对照表](ETHUCY结果对照表.md)
 - 论文数字来源：https://moflow-imle.github.io/（SDD 表）
