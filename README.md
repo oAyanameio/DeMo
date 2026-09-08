@@ -112,10 +112,11 @@ docs/                 研究文档、实验结果、审计报告、数据集说�
 
 ## 实验结果索引
 
-- 总汇总：`docs/results/缺失历史实验总汇总.md`（唯一权威，随实验追加）
+- 结果总索引：`docs/results/README.md`（按实验性质分类）
+- 总汇总：`docs/results/historical/缺失历史实验总汇总.md`（历史缺失结果唯一权威，随实验追加）
 - 逐折数字：`outputs/*/results.json`、`outputs/sdd_*_summary.txt`
 - 审计报告：`docs/audits/`
-- MoFlow vs DeMo 留出对照：`docs/results/MoFlow与DeMo留出测试对比.md`
+- MoFlow vs DeMo 留出对照：`docs/results/baselines/MoFlow与DeMo留出测试对比.md`
 
 ## 上游出处
 

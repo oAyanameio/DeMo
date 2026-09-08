@@ -13,7 +13,6 @@ target:
     drop_path: 0.2
     num_actor_types: 1
     num_modes: 6
-    bimamba: true
     dt: 0.4
     obs_len: 8
     # M0_base 默认；M1_obs/M2_history 经 Hydra override 开启：
@@ -23,6 +22,8 @@ target:
     use_observation_features: false
     use_missing_summary: false
     use_gap_condition: false
+    use_motion_features: false   # B1（P0.5）经 override 开启
+    bimamba: ${bimamba}
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}

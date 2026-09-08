@@ -10,6 +10,7 @@ hydra:
 
 seed: 2024
 fold: ETH
+bimamba: true
 monitor: val_minFDE6
 save_top_k: 1
 
