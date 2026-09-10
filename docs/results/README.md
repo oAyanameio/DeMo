@@ -24,7 +24,9 @@
 
 当前正式 direct 协议的结果统一放在这里：`Clean-direct` 使用完整 ETH/UCY，`Easy-direct` 与 `Hard-direct` 使用 TrajImpute release，以及后续 P0–P5 实验结果。
 
-- 当前尚无正式 DeMo 主实验结果；完成后按模型、协议和阶段追加。
+- [P0：M0-current 完整历史基础能力（Clean-direct，K=20）](P0_Clean-direct_M0-current_K20.md)——2026-09-09，五折 LOSO 全 ok，minFDE20 均值 0.409
+- [DeMo-direct 主协议首轮：M0-current × Easy/Hard（K=20）](DeMo-direct主协议首轮_M0-current_EasyHard_K20.md)——2026-09-10，五场景 train_adapt，Easy 0.253/0.417、Hard 0.433/0.640
+- 后续结果按阶段（P0.5 起）追加。
 
 ## 口径约束
 
