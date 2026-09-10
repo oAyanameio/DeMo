@@ -1,16 +1,17 @@
-# Baseline 对比实验：MoFlow-direct（TrajImpute 协议）
+# Baseline 对比实验：DeMo-direct（本文）vs MoFlow-direct（重训基线）vs 论文 impute 基线（TrajImpute 协议）
 
-> 时间：2026-09-08 ｜ 结构化数据：[baseline对比实验数据.csv](baseline对比实验数据.csv) ｜ 明细 JSON：`~/MoFlow/results_trajimpute_K20_retrain/<subset>/<cond>.json`
+> 时间：2026-09-08（MoFlow 臂）/ 2026-09-10（DeMo 臂） ｜ 结构化数据：[baseline对比实验数据.csv](baseline对比实验数据.csv) ｜ 明细 JSON：MoFlow `~/MoFlow/results_trajimpute_K20_retrain/<subset>/<cond>.json`、DeMo `outputs/trajimpute_retrain/{easy,hard}/`
 
 ## 评估协议
 
 - 数据：TrajImpute 官方 release（ETH/UCY 五场景，官方 train/val/test 划分；Easy = 8 帧历史 0~4 帧缺失，Hard = 4~7 帧缺失）
-- MoFlow（本文）：按官方 train/val 划分重训（EP150、K=20、seed 42，rotate@帧6、tied_noise、fm_in_scaling），**direct 口径**——缺失直接输入不插补（缺失步用训练集逐通道均值占位，锚点=最后可见帧）；easy/hard 各训一臂：easy-ckpt→Clean+Easy，hard-ckpt→Hard
+- **DeMo-direct（本文方法）**：M0-current 基线版（actor-only，bimamba，掩码拼输入内置，无缺失感知模块），每场景独立 train_adapt 重训（EP100、K=20、seed 2024），direct 口径——缺失 NaN 不参与坐标变换，掩码+有效间隔特征输入
+- MoFlow-direct（外部基线重训）：按官方 train/val 划分重训（EP150、K=20、seed 42，rotate@帧6、tied_noise、fm_in_scaling），direct 口径——缺失步用训练集逐通道均值占位，锚点=最后可见帧；easy/hard 各训一臂：easy-ckpt→Clean+Easy，hard-ckpt→Hard
 - 论文基线（NeurIPS 2024 D&B Table 3）：GraphTern / LBEBM-ET / SGCN-ET / EQmotion / TUTR / GPGraph，**impute 口径**（SAITS 插补后训练+测试）——两口径输入信息不同，direct ≤ impute
 - 指标：ADE/FDE 取 20 样本最优（minADE20/minFDE20），米制，12 帧全程
-- 注意：本文 Clean 列为 easy-ckpt 所测（Easy 的零缺失样本），论文 Clean 为 clean 训练数字，Clean 行不同源；论文基线无 direct 结果
+- 注意：MoFlow Clean 列为 easy-ckpt 所测（Easy 的零缺失样本），论文 Clean 为 clean 训练数字，Clean 行不同源；论文基线无 direct 结果；DeMo 无 Clean 行（Clean-direct 为 LOSO 五折协议，见 P0 文档，不混表）
 
-## MoFlow-direct 结果（minADE20 / minFDE20）
+## MoFlow-direct（重训基线）结果（minADE20 / minFDE20）
 
 | 场景 | Clean | Easy | Hard |
 |---|---:|---:|---:|
@@ -20,15 +21,16 @@
 | ZARA1 | 0.178 / 0.310 | 0.194 / 0.327 | 0.330 / 0.500 |
 | ZARA2 | 0.134 / 0.230 | 0.149 / 0.247 | 0.255 / 0.386 |
 
-## 与论文基线对比（ADE/FDE，按均值升序）
+## 与论文基线对比（ADE/FDE，按 minFDE 均值升序，本文方法加粗）
 
 ### Easy
 
 | 方法 | 均值 | ETH | HOTEL | UNIV | ZARA1 | ZARA2 |
 |---|---:|---:|---:|---:|---:|---:|
-| LBEBM-ET (impute) | 0.232/0.376 | 0.37/0.55 | 0.13/0.20 | 0.30/0.51 | 0.20/0.35 | 0.16/0.27 |
+| LBEBM-ET (impute) | **0.232/0.376** | 0.37/0.55 | 0.13/0.20 | 0.30/0.51 | 0.20/0.35 | 0.16/0.27 |
+| MoFlow-direct（重训基线） | 0.265/0.406 | 0.55/0.74 | 0.17/0.27 | 0.26/0.45 | 0.19/0.33 | 0.15/0.25 |
+| **DeMo-direct M0-current（本文）** | 0.253/**0.417** | 0.56/0.87 | 0.14/0.21 | 0.25/0.45 | 0.18/0.31 | 0.14/0.24 |
 | SGCN-ET (impute) | 0.248/0.424 | 0.42/0.71 | 0.14/0.23 | 0.29/0.51 | 0.22/0.38 | 0.17/0.29 |
-| **MoFlow-direct（本文）** | **0.265/0.406** | 0.55/0.74 | 0.17/0.27 | 0.26/0.45 | 0.19/0.33 | 0.15/0.25 |
 | GPGraph (impute) | 0.272/0.424 | 0.45/0.75 | 0.19/0.31 | 0.25/0.44 | 0.18/0.32 | 0.29/0.30 |
 | GraphTern (impute) | 0.318/0.428 | 0.77/0.74 | 0.15/0.25 | 0.27/0.47 | 0.22/0.38 | 0.18/0.30 |
 | EQmotion (impute) | 0.422/0.576 | 0.46/0.62 | 0.65/0.68 | 0.37/0.61 | 0.27/0.43 | 0.36/0.54 |
@@ -38,10 +40,17 @@
 
 | 方法 | 均值 | ETH | HOTEL | UNIV | ZARA1 | ZARA2 |
 |---|---:|---:|---:|---:|---:|---:|
-| EQmotion (impute) | 0.446/0.612 | 0.47/0.63 | 0.72/0.74 | 0.39/0.70 | 0.28/0.44 | 0.37/0.55 |
-| **MoFlow-direct（本文）** | **0.475/0.680** | 0.90/1.16 | **0.43/0.64** | 0.46/0.72 | 0.33/0.50 | **0.26/0.39** |
+| EQmotion (impute) | **0.446/0.612** | 0.47/0.63 | 0.72/0.74 | 0.39/0.70 | 0.28/0.44 | 0.37/0.55 |
+| **DeMo-direct M0-current（本文）** | **0.433**/0.640 | 0.79/1.10 | **0.36/0.55** | 0.46/0.71 | **0.32/0.49** | **0.24/0.36** |
+| MoFlow-direct（重训基线） | 0.475/0.680 | 0.90/1.16 | 0.43/0.64 | 0.46/0.72 | 0.33/0.50 | 0.26/0.39 |
 | GPGraph (impute) | 0.856/0.784 | 0.92/0.93 | 1.89/1.70 | 0.53/0.50 | 0.58/0.45 | 0.36/0.34 |
 | GraphTern (impute) | 0.858/0.878 | 0.78/0.77 | 1.68/1.42 | 0.50/0.51 | 0.96/1.25 | 0.37/0.44 |
 | LBEBM-ET (impute) | 1.088/1.448 | 0.85/1.07 | 3.31/4.13 | 0.64/1.01 | 0.37/0.60 | 0.27/0.43 |
 | TUTR (impute) | 1.180/1.520 | 1.12/1.53 | 3.36/3.95 | 0.59/0.85 | 0.50/0.77 | 0.33/0.50 |
 | SGCN-ET (impute) | 1.214/1.634 | 1.07/1.44 | 3.21/3.92 | 0.77/1.21 | 0.61/0.97 | 0.41/0.63 |
+
+## 读法边界
+
+- 严格同口径可比（direct vs direct）：DeMo-direct 与 MoFlow-direct。Easy 上 DeMo 略逊（0.417 vs 0.406），Hard 上 DeMo 占优（0.640 vs 0.680）且 ADE 均值全场最佳
+- impute 基线行仅作范式参考：其输入经 SAITS 插补补全，信息量高于 direct；Easy 榜首 LBEBM-ET 与 Hard 榜首 EQmotion 均为 impute 口径
+- DeMo 为单种子（2024）首轮 M0-current 裸基线，缺失感知模块（M1'–M4'）与基础增强（P0.5）尚未叠加，该数字为后续所有方法增量的参照零点
