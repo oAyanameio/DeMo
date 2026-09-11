@@ -29,6 +29,7 @@ class ModelForecast(nn.Module):
         dt: float = 0.4,
         obs_len: int = 8,
         use_gap_condition: bool = False,
+        use_evidence_clock: bool = False,
         use_observation_features: bool = False,
         use_missing_summary: bool = False,
         use_motion_features: bool = False,
@@ -44,6 +45,7 @@ class ModelForecast(nn.Module):
         # 初始化路径），并输出 focal_anchor_lag/forecast_gap 供 Mode Query 与
         # Hybrid Coupling 的后续条件化消费（选题 §五.3 r_h 通路）。
         self.use_gap_condition = use_gap_condition
+        self.use_evidence_clock = use_evidence_clock
         if use_gap_condition:
             self.gap_embed = nn.Sequential(
                 nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
@@ -285,19 +287,32 @@ class ModelForecast(nn.Module):
         else:
             y_hat_others = x_encoder.new_zeros((B, 0, self.future_steps, 2))
 
-        # state query initialization
-        # dt 参数化：ETH/UCY 与 SDD 均为 0.4s/帧（frame stride=10 @ 2.5Hz）
-        time = torch.arange(self.future_steps).long().to(x_encoder.device)
-        time = time * self.dt + self.dt
-        time = time.unsqueeze(-1)
-        mode = self.time_embedding_mlp(time)
-        mode = mode.repeat(x_encoder.size(0), 1, 1)
-
         # v3 缺失感知：focal forecast_gap 条件化 State Query 初始化
         # （anchor_lag/forecast_gap 同时进 ret_dict，供 Mode Query/Hybrid
         #  Coupling 条件化路径消费；v1/v2 下恒为 1/0，无影响）
         focal_anchor_lag = data.get("x_anchor_lag_steps", None)
         focal_forecast_gap = data.get("x_forecast_gap_steps", None)
+
+        # state query initialization
+        # dt 参数化：ETH/UCY 与 SDD 均为 0.4s/帧（frame stride=10 @ 2.5Hz）
+        time = torch.arange(self.future_steps).long().to(x_encoder.device)
+        time = time * self.dt + self.dt
+
+        # M1' 证据时钟解码（2026-09-10）：State Query 的时间自变量从
+        # "距历史窗口末端"改为"距最后有效观测"——t_evidence(t) = gap + t（帧），
+        # 秒制 (gap + t) * dt。gap=1（完整历史）时与基线 time=(t+1)*dt 严格一致。
+        # 同一未来帧在证据新（gap 小）与证据旧（gap 大）下获得不同时间嵌入，
+        # 缺失直接改变输出分布的时间形状。
+        if self.use_evidence_clock and focal_forecast_gap is not None:
+            steps = torch.arange(self.future_steps).to(x_encoder.device).float()  # [T]
+            gap_frames = focal_forecast_gap[:, 0].float().view(-1, 1)             # [B,1]
+            t_evidence = (steps.view(1, -1) + gap_frames) * self.dt               # [B,T]
+            mode = self.time_embedding_mlp(t_evidence.unsqueeze(-1))              # [B,T,D]
+        else:
+            time = time.unsqueeze(-1)
+            mode = self.time_embedding_mlp(time)
+            mode = mode.repeat(x_encoder.size(0), 1, 1)
+
         if focal_forecast_gap is not None:
             gap_focal = focal_forecast_gap[:, 0].float()  # [B]
             if self.use_gap_condition:
