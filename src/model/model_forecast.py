@@ -30,6 +30,7 @@ class ModelForecast(nn.Module):
         obs_len: int = 8,
         use_gap_condition: bool = False,
         use_evidence_clock: bool = False,
+        use_social_evidence: bool = False,
         use_observation_features: bool = False,
         use_missing_summary: bool = False,
         use_motion_features: bool = False,
@@ -46,6 +47,21 @@ class ModelForecast(nn.Module):
         # Hybrid Coupling 的后续条件化消费（选题 §五.3 r_h 通路）。
         self.use_gap_condition = use_gap_condition
         self.use_evidence_clock = use_evidence_clock
+        # M2'（P2，主贡献）：社会证据补偿——时间对齐的跨行人证据注意力。
+        # 邻居帧级 token（相对几何+时间归一+有效位 → 线性投影）作为
+        # attention 的 key/value；query 为场景编码后的 focal token。
+        # 双重掩码：邻居帧无效或邻居为 padding actor 的 token 不参与注意力。
+        # 补偿向量经学习门控残差注入 focal 表征——不输出重建历史轨迹，
+        # 与插补路线（MS-TIP/GC-VRNN/BRITS）划清边界。
+        self.use_social_evidence = use_social_evidence
+        if use_social_evidence:
+            self.neighbor_frame_embed = nn.Sequential(
+                nn.Linear(4, embed_dim), nn.GELU(), nn.Linear(embed_dim, embed_dim))
+            self.social_attn = nn.MultiheadAttention(
+                embed_dim, num_heads=4, batch_first=True)
+            self.social_norm = nn.LayerNorm(embed_dim)
+            self.social_gate = nn.Sequential(
+                nn.Linear(embed_dim, 1), nn.Sigmoid())
         if use_gap_condition:
             self.gap_embed = nn.Sequential(
                 nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
@@ -273,6 +289,51 @@ class ModelForecast(nn.Module):
         for blk in self.blocks:
             x_encoder = blk(x_encoder, key_padding_mask=~key_valid_mask)
         x_encoder = self.norm(x_encoder)
+
+        # M2' 社会证据补偿（2026-09-10）：时间对齐的跨行人证据注意力。
+        # focal 的缺失帧证据从邻居同期观测聚合：邻居帧 token =
+        # [相对位置(focal最后有效位置系), 相对几何归一, t/obs_len, 邻居帧有效位]，
+        # 双重掩码（邻居帧无效 × padding actor）后 attention 聚合到 focal token，
+        # 门控残差注入。缺失帧越多可用邻居证据越重要——补偿量天然与 gap 相关。
+        if self.use_social_evidence:
+            # 相对几何：邻居各帧位置 - focal 最后有效位置（缺失帧被
+            # valid_mask 置零占位，不产生虚假相对几何）
+            focal_last = data["x_centers"][:, 0:1, :]            # [B,1,2] focal 锚点
+            rel_pos = data["x_positions"][:, 1:, :, :] - focal_last.unsqueeze(2)  # [B,N-1,L,2]
+            t_norm = torch.arange(self.obs_len, device=x_encoder.device).float().view(1, 1, -1, 1) / self.obs_len
+            neigh_valid = data["x_valid_mask"][:, 1:, :].float()                    # [B,N-1,L]
+            pad_mask = data["x_key_valid_mask"][:, 1:]                # [B,N-1] 或 [B,N-1,L]
+            if pad_mask.dim() == 2:
+                pad_mask = pad_mask.unsqueeze(-1).expand(-1, -1, self.obs_len)
+            pad_valid = pad_mask.float()                              # [B,N-1,L]
+            frame_feat = torch.cat([
+                rel_pos / 5.0,                        # 相对位置（米→归一尺度）
+                t_norm.expand(B, rel_pos.size(1), self.obs_len, 1),
+                (neigh_valid * pad_valid).unsqueeze(-1),
+            ], dim=-1)                                # [B,N-1,L,4]
+            tokens = self.neighbor_frame_embed(frame_feat)      # [B,N-1,L,D]
+            B_, Nn, L_, D_ = tokens.shape
+            tokens = tokens.view(B_, Nn * L_, D_)                # [B, (N-1)*L, D]
+            token_valid = (neigh_valid * pad_valid).view(B_, Nn * L_).bool()  # 双重掩码
+            query = x_encoder[:, 0:1, :]                         # [B,1,D] focal token
+            # 边界防护：全 token 无效的样本（邻居恰好全缺失/padding）跳过补偿，
+            # 否则 softmax 对空集产生 NaN（Hard 高缺失下真实会出现）
+            has_any = token_valid.any(dim=-1, keepdim=True)      # [B,1]
+            attn_out = torch.zeros_like(query)
+            if has_any.all():
+                attn_out, _ = self.social_attn(
+                    query, tokens, tokens, key_padding_mask=~token_valid)
+            elif has_any.any():
+                sub, _ = self.social_attn(
+                    query[has_any[:, 0]], tokens[has_any[:, 0]], tokens[has_any[:, 0]],
+                    key_padding_mask=~token_valid[has_any[:, 0]])
+                attn_out[has_any[:, 0]] = sub
+            # has_any 全 False 的样本 attn_out 保持零 → 门控后无补偿
+            gate = self.social_gate(attn_out + query)            # [B,1,1] 学习门控
+            x_encoder = torch.cat([
+                self.social_norm(query + gate * attn_out),
+                x_encoder[:, 1:N, :],
+            ], dim=1)
 
         ###### Trajectory decoding with decoupled queries ###### 
         new_y_hat = None
