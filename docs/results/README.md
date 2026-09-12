@@ -27,7 +27,8 @@
 - [P0：M0-current 完整历史基础能力（Clean-direct，K=20）](P0_Clean-direct_M0-current_K20.md)——2026-09-09，五折 LOSO 全 ok，minFDE20 均值 0.409
 - [P0.5：基础增强双环境交叉筛选（K=20）](P0.5_双环境筛选_M0-strong_K20.md)——2026-09-10，Clean 持平(+0.17%)/Easy 改善(−2.49%)，裁定 **M0-strong = B1**
 - [DeMo-direct 主协议首轮：M0-current × Easy/Hard（K=20）](DeMo-direct主协议首轮_M0-current_EasyHard_K20.md)——2026-09-10，五场景 train_adapt，Easy 0.253/0.417、Hard 0.433/0.640
-- 后续结果按阶段（P1 起）追加。
+- [P1：M1' 证据时钟消融（Easy-direct，K=20）](P1_M1evidence_消融_Easy_K20.md)——2026-09-10，**未通过**（均值 +3.97%，2 改善 3 退化）；分组梯度存在但被重参数化的共享底座位移淹没；按解耦规则 M2' 从 B1 出发
+- 后续结果按阶段（P2 起）追加。
 
 ## 口径约束
 
