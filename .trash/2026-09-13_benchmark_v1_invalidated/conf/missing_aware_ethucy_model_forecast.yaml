@@ -16,13 +16,15 @@ target:
     dt: 0.4
     obs_len: 8
     # M0_base 默认；M1_obs/M2_history 经 Hydra override 开启：
+    #   M1: model.target.model.use_observation_features=true
+    #   M2: 再加 model.target.model.use_missing_summary=true
+    # M3/M4（condition_state_query/mode_query/hybrid）未实现，禁止添加。
     use_observation_features: false
     use_missing_summary: false
     use_gap_condition: false
-    use_motion_features: false   # B1（P0.5）经 override 开启
     use_evidence_clock: false   # M1'（P1）经 override 开启：State Query 时间自变量改为距最后有效观测
     use_social_evidence: false  # M2'（P2）经 override 开启：社会证据补偿（跨行人证据注意力）
-    # 主链裁定（2026-09-12）：编码器固定原版单向，与 trajimpute 主配置同步；无须区分单双向。
+    use_motion_features: false   # B1（P0.5）经 override 开启
     bimamba: ${bimamba}
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}

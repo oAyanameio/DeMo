@@ -1,6 +1,6 @@
 """B1（P0.5 运动证据增强）共享纯函数：跨缺口运动特征。
 
-2026-09-08 统一：ethucy_benchmark_dataset 与 trajimpute_dataset 共用本实现，
+2026-09-08 统一：trajimpute_dataset 使用本实现，
 消除此前"连续帧版 vs 跨缺口版"两套语义的分叉。
 
 语义（完整历史下的中性约定：与旧相邻帧实现数值一致，s=t-1 时退化）：

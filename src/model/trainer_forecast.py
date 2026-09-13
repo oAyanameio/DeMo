@@ -14,6 +14,11 @@ from src.utils.LaplaceNLLLoss import LaplaceNLLLoss
 from .model_forecast import ModelForecast
 
 
+def _log_detach(x):
+    """日志标量统一 detach：tensor 去梯度，标量原样返回（避免对 0 调 .detach）。"""
+    return x.detach() if torch.is_tensor(x) else x
+
+
 class Trainer(pl.LightningModule):
     def __init__(
         self,
@@ -142,20 +147,22 @@ class Trainer(pl.LightningModule):
                 new_agent_reg_loss + dense_reg_loss + new_pi_reg_loss
         loss = loss + laplace_loss + laplace_loss_new
 
+        # 日志标量保持 detached tensor，避免每 batch 多次 GPU->CPU 同步（提速方案 §2.3）；
+        # 字段名与数值定义不变，只在 epoch 结束由 logger 统一 .item() 一次。
         disp_dict = {
-            f"{tag}loss": loss.item(),
-            f"{tag}reg_loss": agent_reg_loss.item(),
-            f"{tag}cls_loss": agent_cls_loss.item(),
-            f"{tag}others_reg_loss": others_reg_loss.item(),
-            f"{tag}laplace_loss": laplace_loss.item(),
-            f"{tag}laplace_loss_new": laplace_loss_new.item(),
+            f"{tag}loss": loss.detach(),
+            f"{tag}reg_loss": agent_reg_loss.detach(),
+            f"{tag}cls_loss": agent_cls_loss.detach(),
+            f"{tag}others_reg_loss": others_reg_loss.detach(),
+            f"{tag}laplace_loss": laplace_loss.detach(),
+            f"{tag}laplace_loss_new": laplace_loss_new.detach(),
         }
         if new_y_hat is not None:
-            disp_dict[f"{tag}reg_loss_refine"] = new_agent_reg_loss.item()
+            disp_dict[f"{tag}reg_loss_refine"] = _log_detach(new_agent_reg_loss)
         if new_pi is not None:
-            disp_dict[f"{tag}reg_loss_new_pi"] = new_pi_reg_loss.item()
+            disp_dict[f"{tag}reg_loss_new_pi"] = _log_detach(new_pi_reg_loss)
         if dense_predict is not None:
-            disp_dict[f"{tag}reg_loss_dense"] = dense_reg_loss.item()
+            disp_dict[f"{tag}reg_loss_dense"] = _log_detach(dense_reg_loss)
 
         return loss, disp_dict
 
@@ -170,7 +177,7 @@ class Trainer(pl.LightningModule):
                 on_step=True,
                 on_epoch=True,
                 prog_bar=False,
-                sync_dist=True,
+                sync_dist=False,  # 单卡无 all-reduce；多卡再改回 True
             )
 
         return loss

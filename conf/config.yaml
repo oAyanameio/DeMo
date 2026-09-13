@@ -1,20 +1,26 @@
+# 主入口默认配置：TrajImpute 直接缺失预测（M0 默认；B1/M1'/M2' 经 override 开启）
+# 2026-09-13：自建 ETHUCY_benchmark_v1 已作废删除（重切窗口偏离预定义 LOO 划分），
+# 本配置默认指向 TrajImpute 官方 release；完整历史 Clean 参照直接引用原论文数字。
 defaults:
-  - datamodule: ethucy_benchmark
-  - model: ethucy_benchmark_model_forecast
+  - datamodule: trajimpute
+  - model: missing_aware_ethucy_model_forecast
 
 hydra:
   run:
     dir: outputs/${output}/${now:%Y%m%d-%H%M%S}
 
 seed: 2024
-monitor: val_minFDE6
-save_top_k: 10
+scene: ETH-M
+difficulty: Easy
+monitor: val_minFDE20
+save_top_k: 1
 
-data_root: data/ETHUCY_benchmark_v1
-fold: ETH
+data_root: /home/lbh/TrajImpute/dataset/TrajImpute
+zero_missing_only: false
 checkpoint:
 pretrained_weights:
-output: change_${datamodule.name}_${datamodule.phase}_${model.name}_${model.phase}
+output: trajimpute_${model_version}_${scene}_${difficulty}
+clean_suffix: ''
 
 # trainer
 num_workers: 4
@@ -22,12 +28,14 @@ gpus: 1
 sync_bn: false
 batch_size: 64
 epochs: 100
-warmup_epochs: 10
+warmup_epochs: 5
 precision: bf16
+# 主链 K=20 裁定（2026-09-12）：编码器固定原版单向（旗标仅作用于 encoder）
+bimamba: false
 
 # optimizer
-lr: 0.003  
-weight_decay: 1e-2  
+lr: 0.001
+weight_decay: 0.0001
 gradient_clip_val: 5
 gradient_clip_algorithm: norm
 
@@ -35,4 +43,11 @@ limit_train_batches:
 limit_val_batches:
 limit_test_batches:
 log_model: all
-test: false  # false for val, true for test
+test: false
+
+model_version: '0'
+
+model:
+  target:
+    model:
+      num_modes: 20

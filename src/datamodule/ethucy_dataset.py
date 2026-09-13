@@ -56,7 +56,7 @@ class EthUcyDataset(Dataset):
         return len(self.file_list)
 
     def __getitem__(self, index: int):
-        data = torch.load(self.file_list[index], weights_only=False)
+        data = torch.load(self.file_list[index], weights_only=True)
         return self.process(data)
 
     def process(self, data: dict) -> dict:

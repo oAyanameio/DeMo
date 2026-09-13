@@ -30,7 +30,6 @@ REPO = Path(__file__).resolve().parents[2]
 PY = sys.executable
 CONFIG_NAME = "config_missing_aware_trajimpute"
 EVAl_SCRIPT = REPO / "scripts/结果分析/evaluate_trajimpute_direct.py"
-CLEAN_RUNNER = REPO / "scripts/训练与评估/run_missing_aware_ethucy.py"
 
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
@@ -60,13 +59,6 @@ VARIANTS = {
 }
 
 PROTOCOLS = {
-    "clean-direct": {
-        "dataset": "ethucy",
-        "data_root": "data/ETHUCY_benchmark_v1",
-        "condition": "complete",
-        "zero_missing_only": False,
-        "suffix": "-complete",
-    },
     "easy-direct": {
         "dataset": "trajimpute",
         "difficulty": "Easy",
@@ -135,54 +127,7 @@ def select_best_checkpoint(train_dir, monitor):
     return best_epoch, best_value, str(candidates[0])
 
 
-def clean_data_root(args):
-    root = Path(getattr(args, "clean_data_root", REPO / "data/ETHUCY_benchmark_v1"))
-    return root if root.is_absolute() else (REPO / root).resolve()
-
-
 def build_manifest(args, protocol_cfg):
-    if protocol_cfg["dataset"] == "ethucy":
-        root = clean_data_root(args)
-        return {
-            "protocol": "clean-direct",
-            "dataset": "ETHUCY",
-            "data_source": {
-                "type": "original_ethucy_complete",
-                "root": str(root),
-                "manifest": str(root / "manifest.json"),
-                "context_policy": "strict_complete",
-                "is_trajimpute_clean_split": False,
-            },
-            "folds": list(getattr(args, "folds", FOLDS)),
-            "files": {
-                fold: {
-                    split: f"{root}/fold_{fold}/{split}"
-                    for split in ("train", "val", "test")
-                }
-                for fold in getattr(args, "folds", FOLDS)
-            },
-            "git_revision": get_git_revision(),
-            "python": sys.executable,
-            "env": env_info(),
-            "model_version": args.variant,
-            "backbone": {"bimamba": args.bimamba},
-            "seed": args.seed,
-            "batch_size": args.batch_size,
-            "epochs": args.epochs,
-            "lr": args.lr,
-            "weight_decay": args.weight_decay,
-            "monitor": f"val_minFDE{args.K}",
-            "K": args.K,
-            "training_mode": "retrain_missing_data",
-            "zero_missing_only": False,
-            "gpu": args.gpu,
-            "started": datetime.now().isoformat(timespec="seconds"),
-            "experiment_class": "smoke" if args.smoke else (
-                "screening" if args.screening else "confirmatory"),
-            "output_root": str(args.output_root),
-            "command": " ".join(sys.argv),
-        }
-
     data_root = Path(args.data_root)
     return {
         "protocol": args.protocol,
@@ -220,58 +165,6 @@ def build_manifest(args, protocol_cfg):
         "command": " ".join(sys.argv),
     }
 
-
-def build_clean_runner_command(args):
-    """构造完整 ETH/UCY Clean-direct 五折 runner 命令。"""
-    cmd = [
-        PY, "-u", str(CLEAN_RUNNER),
-        "--protocol", "clean-direct",
-        "--variant", args.variant,
-        "--condition", "complete",
-        "--data-root", str(clean_data_root(args)),
-        "--output-root", str(args.output_root),
-        "--seed", str(args.seed),
-        "--gpu", str(args.gpu),
-        "--bimamba" if args.bimamba else "--no-bimamba",
-        "--num-modes", str(DIRECT_NUM_MODES),
-        "--batch-size", str(args.batch_size),
-        "--num-workers", str(args.num_workers),
-        "--epochs", str(args.epochs),
-        "--lr", str(args.lr),
-        "--weight-decay", str(args.weight_decay),
-        "--precision", args.precision,
-    ]
-    folds = list(getattr(args, "folds", FOLDS))
-    if folds != FOLDS:
-        cmd += ["--folds", *folds]
-    return cmd
-
-
-def run_clean_protocol(args, protocol_cfg, gpu_env):
-    root = Path(args.output_root)
-    root.mkdir(parents=True, exist_ok=True)
-    clean_root = clean_data_root(args)
-    manifest_path = root / f"manifest_{args.variant}_clean-direct_seed{args.seed}.json"
-    if manifest_path.exists():
-        raise SystemExit(f"拒绝覆盖已有 Clean manifest: {manifest_path}")
-    if not clean_root.exists():
-        raise SystemExit(f"完整 ETH/UCY 数据根目录不存在: {clean_root}")
-    source_manifest = clean_root / "manifest.json"
-    if not source_manifest.exists():
-        raise SystemExit(f"完整 ETH/UCY 数据缺少 manifest.json: {source_manifest}")
-    source = json.loads(source_manifest.read_text())
-    if source.get("version") != "ethucy_benchmark_v1" or \
-            source.get("context_policy") != "strict_complete":
-        raise SystemExit(
-            "Clean-direct 只接受 version=ethucy_benchmark_v1、"
-            "context_policy=strict_complete 的完整 ETH/UCY 数据"
-        )
-    manifest_path.write_text(
-        json.dumps(build_manifest(args, protocol_cfg), indent=2, ensure_ascii=False)
-    )
-    log_path = root / f"runner_{args.variant}_clean-direct_seed{args.seed}.log"
-    rc = sh(build_clean_runner_command(args), log_path, env=gpu_env)
-    return rc
 
 
 def sh(cmd, log_path, env=None):
@@ -392,7 +285,6 @@ def main():
     ap.add_argument("--scenes", nargs="+", default=SCENES)
     ap.add_argument("--folds", nargs="+", default=FOLDS, choices=FOLDS)
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
-    ap.add_argument("--clean-data-root", default="data/ETHUCY_benchmark_v1")
     ap.add_argument("--precision", default="bf16")
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--gpu", type=int, default=0)
@@ -403,7 +295,8 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
     ap.add_argument("--K", type=int, default=DIRECT_NUM_MODES, choices=[DIRECT_NUM_MODES])
-    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
+                    help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
     ap.add_argument("--output-root", default="outputs/trajimpute_retrain")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--screening", action="store_true",
@@ -429,9 +322,6 @@ def main():
     gpu_env["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     gpu_env["PYTHONNOUSERSITE"] = "1"
     gpu_env["PYTHONPATH"] = "."
-
-    if protocol_cfg["dataset"] == "ethucy":
-        raise SystemExit(run_clean_protocol(args, protocol_cfg, gpu_env))
 
     manifest = build_manifest(args, protocol_cfg)
     results = []

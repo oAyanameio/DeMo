@@ -34,8 +34,11 @@ batch_size: 64
 epochs: 100
 warmup_epochs: 5
 precision: bf16
-# backbone 开关：P0 需要单向（false）/双向（true）对照
-bimamba: true
+# 主链 K=20 裁定（2026-09-12）：编码器固定原版单向（bimamba=false，旗标仅作用于
+# encoder 的 4 层 hist_embed_mamba；decoder state Mamba 原版即硬编码双向，不受影响）。
+# 后续实验无须再区分单双向；uni/bi 对照臂仅作为一次性验证保留在
+# outputs/trajimpute_retrain_uni 与 outputs/clean_ethucy_uni。
+bimamba: false
 
 # optimizer
 lr: 0.001

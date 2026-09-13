@@ -39,6 +39,11 @@ VARIANTS = {
            "use_motion_features": False},
     "B1": {"use_observation_features": False, "use_missing_summary": False,
            "use_motion_features": True},
+    "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
+                    "use_motion_features": True, "use_evidence_clock": True},
+    "M2-social": {"use_observation_features": False, "use_missing_summary": False,
+                  "use_motion_features": True, "use_evidence_clock": False,
+                  "use_social_evidence": True},
     "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
                "use_motion_features": False},
     "M2_history": {"use_observation_features": True, "use_missing_summary": True,
@@ -137,7 +142,8 @@ def main():
     ap.add_argument("--max-batches", type=int, default=None)
     ap.add_argument("--output-root", default="outputs/trajimpute_retrain")
     ap.add_argument("--device", default="cuda:0")
-    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=True)
+    ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
+                    help="主链固定单向(2026-09-12裁定)；须与训练时一致")
     args = ap.parse_args()
 
     if args.K != 20:

@@ -1,4 +1,4 @@
-"""B1 运动特征跨实现一致性测试（ethucy_benchmark vs trajimpute_dataset）。
+"""B1 运动特征实现一致性测试（trajimpute_dataset）。
 
 2026-09-08 统一后两套 dataset 的 x_velocity/x_velocity_diff/x_turn_rate 均为
 跨缺口语义（相邻有效观测、按步数归一化）。本测试锁定：

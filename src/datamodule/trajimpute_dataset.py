@@ -232,7 +232,7 @@ def build_sample(
     diff, velocity, velocity_diff = build_gap_aware_motion(hist_local, hist_valid)
     x_positions_diff = diff
     x_velocity = velocity
-    # B1（P0.5）补充运动证据字段：与 ethucy_benchmark 共用同一纯函数
+    # B1（P0.5）补充运动证据字段：基于 b1_motion_features 纯函数
     # （2026-09-08 统一跨缺口语义；x_accel = 相邻两个真实有效速度之差，
     # 首个有效帧与缺失帧为 0——区别于 velocity_diff（跨缺口差分基线含首个有效帧））：
     #   x_turn_rate  = 相邻有效步航向变化率（跨缺口，除以步数；无效步为 0）
@@ -395,7 +395,7 @@ class TrajImputeDataset(Dataset):
 
 
 def trajimpute_collate_fn(batch):
-    """与 ethucy_benchmark_collate_fn 同构 + TrajImpute 附加标量字段。"""
+    """TrajImpute collate：含 B1 运动证据与缺失派生标量字段。"""
     data = {}
     for key in [
         "x_positions_diff", "x_attr", "x_positions", "x_centers",
@@ -507,7 +507,7 @@ def inspect_clean_source(data_root: str = TRAJIMPUTE_ROOT):
     """检查 release 是否存在独立 clean 数据。
 
     Easy 中的零缺失样本仅用于数据完整性诊断，不能替代完整 ETH/UCY
-    benchmark，也不能作为 Clean-direct 数据源。
+    benchmark 之外的自建数据，也不能作为 Clean 数据源（Clean=原始 ETH/UCY 直接引用原论文数字）。
     """
     root = Path(data_root)
     independent = []

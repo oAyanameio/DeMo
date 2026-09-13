@@ -64,63 +64,37 @@ for s in SUBS:
     print(f"   datamodule 除subset相同: {same_dm} | data_root={dd.get('data_root')} obs/pred={dd.get('obs_len')}/{dd.get('pred_len')} subset={dd.get('subset')}")
 
 # ============================================================
-# Missing-Aware M0/M1/M2 配置检查（新增段，独立于上面 outputs 依赖）
+# 当前主链配置检查（TrajImpute direct；历史 missing_aware_* 配置已随
+# 旧自定义缺失数据废弃删除，2026-09-13）
 # ============================================================
-print("\n=== Missing-Aware 配置检查 (yaml 静态解析) ===")
-MA_EXPECT = {
-    "embed_dim": 128, "future_steps": 12, "dt": 0.4, "obs_len": 8, "bimamba": True,
-    "use_observation_features": False, "use_missing_summary": False,
-    "use_gap_condition": False,
-}
-MA_FORBIDDEN = ["condition_state_query", "condition_mode_query", "condition_hybrid"]
+print("\n=== 主链配置检查 (config_missing_aware_trajimpute) ===")
 ma_fail = 0
-ma_models = {}
-for name, modes in (("missing_aware_ethucy", 6), ("missing_aware_sdd", 20)):
-    path = ROOT / "conf" / "model" / f"{name}_model_forecast.yaml"
-    if not path.exists():
-        print(f"[FAIL] {name}: 配置文件缺失 {path}")
-        ma_fail += 1
-        continue
-    text = path.read_text()
-    m = yaml.safe_load(text)["target"]["model"]
+path = ROOT / "conf" / "config_missing_aware_trajimpute.yaml"
+if not path.exists():
+    print(f"[FAIL] config_missing_aware_trajimpute: 配置文件缺失")
+    ma_fail += 1
+else:
+    import yaml as _yaml
+    c = _yaml.safe_load(path.read_text())
+    expect = {
+        "data_root": "/home/lbh/TrajImpute/dataset/TrajImpute",
+        "monitor": "val_minFDE20",
+        "bimamba": False,
+        "num_modes-check": c["model"]["target"]["model"]["num_modes"] == 20,
+    }
     problems = []
-    for k, v in MA_EXPECT.items():
-        if m.get(k) != v:
-            problems.append(f"{k}={m.get(k)!r} (期望 {v!r})")
-    if m.get("num_modes") != modes:
-        problems.append(f"num_modes={m.get('num_modes')!r} (期望 {modes})")
-    for k in MA_FORBIDDEN:
-        if k in m:  # 只检查实际配置键，不误伤注释中的提及
-            problems.append(f"包含未实现参数 {k}")
-    ma_models[name] = m
+    if c.get("data_root") != expect["data_root"]:
+        problems.append(f"data_root={c.get('data_root')!r}")
+    if c.get("monitor") != expect["monitor"]:
+        problems.append(f"monitor={c.get('monitor')!r}")
+    if c.get("bimamba") != expect["bimamba"]:
+        problems.append(f"bimamba={c.get('bimamba')!r} (期望单向 false)")
+    if not expect["num_modes-check"]:
+        problems.append("num_modes != 20")
     status = "PASS" if not problems else "FAIL"
     if problems:
         ma_fail += 1
-    print(f"[{status}] {name}: " + ("; ".join(problems) if problems else f"主参数全部符合（num_modes={modes}）"))
+    print(f"[{status}] config_missing_aware_trajimpute: " +
+          ("; ".join(problems) if problems else "data_root/monitor/bimamba/num_modes 全部符合"))
 
-# 两套配置除 num_modes（及数据相关 monitor）外模型主参数一致
-if len(ma_models) == 2:
-    e, s = ma_models["missing_aware_ethucy"], ma_models["missing_aware_sdd"]
-    diffs = [k for k in set(e) | set(s)
-             if k not in ("num_modes",) and e.get(k) != s.get(k)]
-    if diffs:
-        print(f"[FAIL] ETH/UCY vs SDD 模型主参数不一致: {diffs}")
-        ma_fail += 1
-    else:
-        print("[PASS] ETH/UCY vs SDD 除 num_modes 外模型主参数完全一致")
-
-# 顶层配置 monitor 检查
-for name, mon in (("config_missing_aware_ethucy", "val_minFDE6"),
-                  ("config_missing_aware_sdd", "val_minFDE20")):
-    path = ROOT / "conf" / f"{name}.yaml"
-    if not path.exists():
-        print(f"[FAIL] {name}: 配置文件缺失")
-        ma_fail += 1
-        continue
-    c = yaml.safe_load(path.read_text())
-    ok = c.get("monitor") == mon
-    print(f"[{'PASS' if ok else 'FAIL'}] {name}: monitor={c.get('monitor')!r} (期望 {mon!r})")
-    if not ok:
-        ma_fail += 1
-
-print(f"\nMissing-Aware 检查失败项: {ma_fail}")
+print(f"\n配置检查失败项: {ma_fail}")

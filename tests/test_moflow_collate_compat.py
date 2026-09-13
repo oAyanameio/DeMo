@@ -1,7 +1,7 @@
 """任务一：moflow_ethucy_collate_fn 可选扩展字段兼容性测试。
 
 背景：该 collate 被 MoFlow 原始路径（MoFlowEthUcyDataset/MoFlowSddDataset，
-不产出扩展字段）与 SDD missing 路径（SddMissingDataset，产出全部扩展字段）
+不产出扩展字段）与带扩展字段的合成样本路径
 共享。v3/missing-aware 阶段把扩展字段改为无条件读取后，MoFlow 原始路径
 第一个 batch 即 KeyError。
 
@@ -89,7 +89,7 @@ class TestBasicCollateUnchanged:
 
 class TestExtFieldsCollate:
     def test_sdd_missing_style_all_ext_fields_succeeds(self):
-        """SDD missing 风格：全部扩展字段在场，collate 后 shape 正确。"""
+        """带扩展字段的样本：collate 后 shape 正确。"""
         batch = moflow_ethucy_collate_fn(
             [make_moflow_item(N=1, with_ext=True), make_moflow_item(N=1, with_ext=True, seed=1)])
         for k in ("x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run"):
@@ -157,16 +157,3 @@ class TestRealMoFlowData:
         assert batch["x_positions"].shape[0] == 2
         for k in OPTIONAL_EXT_KEYS:
             assert k not in batch
-
-
-@pytest.mark.skipif(not Path("/home/lbh/DeMo/data/SDD_missing_v2_high/random_block6").exists(),
-                    reason="SDD missing v2 data not available")
-class TestRealSddMissingData:
-    def test_real_sdd_missing_batch_keeps_all_ext_fields(self):
-        from src.datamodule.sdd_missing_dataset import SddMissingDataset
-        ds = SddMissingDataset("data/SDD_missing_v2_high", "random_block6", "test")
-        batch = moflow_ethucy_collate_fn([ds[0], ds[1]])
-        for k in OPTIONAL_EXT_KEYS:
-            assert k in batch, k
-        assert batch["x_gap_steps"].shape[1] == 1  # SDD 单 actor
-        assert bool(torch.isfinite(batch["x_missing_summary"]).all())
