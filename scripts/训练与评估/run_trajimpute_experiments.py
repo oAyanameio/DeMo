@@ -187,18 +187,24 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         tag += "_uni"
     run_dir = Path(args.output_root) / tag
     if run_dir.exists():
-        raise RuntimeError(
-            f"正式重训输出目录已存在，拒绝跳过或复用: {run_dir}；"
-            "请更换 --output-root 或显式删除该实验目录"
-        )
-    run_dir.mkdir(parents=True)
+        # 断点续训放行：已有 last.ckpt 的半成品目录允许继续（2026-09-13）
+        if (run_dir / "train" / "checkpoints" / "last.ckpt").exists():
+            print(f"[resume-ok] 半成品目录续训: {run_dir}", flush=True)
+        else:
+            raise RuntimeError(
+                f"正式重训输出目录已存在，拒绝跳过或复用: {run_dir}；"
+                "请更换 --output-root 或显式删除该实验目录"
+            )
+    run_dir.mkdir(parents=True, exist_ok=True)
     log = run_dir / "runner.log"
 
-    with open(run_dir / "manifest.json", "w") as f:
+    _manifest = run_dir / "manifest.json"
+    if not _manifest.exists():
         m = dict(manifest)
         m["scenes"] = [scene]
         m["files"] = {scene: manifest["files"][scene]}
-        json.dump(m, f, indent=2, ensure_ascii=False)
+        with open(_manifest, "w") as f:
+            json.dump(m, f, indent=2, ensure_ascii=False)
 
     # 训练
     train_overrides = [
@@ -228,7 +234,23 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
                             f"limit_val_batches={args.limit_batches}"]
     train_cmd = [PY, "-u", "train.py", f"--config-name={CONFIG_NAME}"] + train_overrides + [
         f"hydra.run.dir={run_dir / 'train'}"]
-    rc = sh(train_cmd, log, env=gpu_env)
+
+    # 2026-09-13：断点续训 + 被杀自动重拉（外源 SIGTERM 防御）。
+    # train.py 原生支持 ckpt_path=last.ckpt；训练失败时只要 last.ckpt 存在就续训，
+    # 最多 args.max_train_retries 次；目录守卫对"已有 last.ckpt 的半成品"放行续训。
+    last_ckpt = run_dir / "train" / "checkpoints" / "last.ckpt"
+    rc = 1
+    for attempt in range(1, getattr(args, "max_train_retries", 6) + 1):
+        cmd = list(train_cmd)
+        if last_ckpt.exists():
+            cmd.append(f"checkpoint={last_ckpt}")
+            print(f"[resume] attempt={attempt} from {last_ckpt}", flush=True)
+        rc = sh(cmd, log, env=gpu_env)
+        if rc == 0:
+            break
+        print(f"[train-failed] attempt={attempt} rc={rc}", flush=True)
+        if not last_ckpt.exists():
+            break  # 无断点可续，放弃
     if rc != 0:
         return {"scene": scene, "status": "train_failed", "dir": str(run_dir), "rc": rc}
 
@@ -299,6 +321,8 @@ def main():
                     help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
     ap.add_argument("--output-root", default="outputs/trajimpute_retrain")
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--max-train-retries", type=int, default=6,
+                    help="训练被杀后自动断点续训的最大重试次数")
     ap.add_argument("--screening", action="store_true",
                     help="标记为筛选实验（正式非确认性）")
     ap.add_argument("--limit-batches", type=int, default=2, help="smoke 用")
