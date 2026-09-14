@@ -59,9 +59,9 @@ class ModelForecast(nn.Module):
                 nn.Linear(4, embed_dim), nn.GELU(), nn.Linear(embed_dim, embed_dim))
             self.social_attn = nn.MultiheadAttention(
                 embed_dim, num_heads=4, batch_first=True)
-            self.social_norm = nn.LayerNorm(embed_dim)
-            self.social_gate = nn.Sequential(
-                nn.Linear(embed_dim, 1), nn.Sigmoid())
+            self.social_proj = nn.Sequential(
+                nn.Linear(embed_dim, embed_dim), nn.GELU(), nn.Linear(embed_dim, embed_dim))
+            self.social_scale = nn.Parameter(torch.zeros(1))  # P2: 零初始化残差缩放，初始严格等价 M0
         if use_gap_condition:
             self.gap_embed = nn.Sequential(
                 nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
@@ -328,10 +328,11 @@ class ModelForecast(nn.Module):
                     query[has_any[:, 0]], tokens[has_any[:, 0]], tokens[has_any[:, 0]],
                     key_padding_mask=~token_valid[has_any[:, 0]])
                 attn_out[has_any[:, 0]] = sub
-            # has_any 全 False 的样本 attn_out 保持零 → 门控后无补偿
-            gate = self.social_gate(attn_out + query)            # [B,1,1] 学习门控
+            # has_any 全 False 的样本 attn_out 保持零 → 缩放后无补偿。
+            # 残差注入：focal + social_scale · proj(attn_out)，scale=0 初始严格等价 M0
+            delta = self.social_proj(attn_out)
             x_encoder = torch.cat([
-                self.social_norm(query + gate * attn_out),
+                query + self.social_scale * delta,
                 x_encoder[:, 1:N, :],
             ], dim=1)
 

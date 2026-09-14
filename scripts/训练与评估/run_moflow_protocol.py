@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 SUBSETS = ["eth", "hotel", "univ", "zara1", "zara2"]
+import sys
+MODEL_OVERRIDES = [a for a in sys.argv[2:]]  # argv[1]=epochs, 其余全部作为模型 override 透传
 
 
 def find_best_metrics(run_dir: Path):
@@ -47,12 +49,12 @@ def main():
                 "--config-name", "config_moflow_ethucy",
                 f"datamodule.target.subset={subset}",
                 f"epochs={epochs}",
-            ],
+            ] + MODEL_OVERRIDES,
             cwd=root,
             env=env,
         )
         proc.wait()
-        out_root = root / "outputs" / f"moflow_{subset}"
+        out_root = root / "outputs" / f"moflow_{subset}" if not MODEL_OVERRIDES else root / "outputs" / ("moflow_" + subset + "_" + (sys.argv[2].split("=")[-1] if "=" in sys.argv[2] else "ov"))
         runs = sorted(out_root.glob("*/"), key=lambda p: p.stat().st_mtime)
         best = find_best_metrics(runs[-1]) if runs else None
         if best:

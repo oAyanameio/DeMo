@@ -42,7 +42,7 @@ VARIANTS = {
     "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
                     "use_motion_features": True, "use_evidence_clock": True},
     "M2-social": {"use_observation_features": False, "use_missing_summary": False,
-                  "use_motion_features": True, "use_evidence_clock": False,
+                  "use_motion_features": False, "use_evidence_clock": False,
                   "use_social_evidence": True},
     "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
                "use_motion_features": False},

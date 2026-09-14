@@ -14,6 +14,13 @@ target:
     num_actor_types: 1
     num_modes: 20
     dt: 0.4
+    obs_len: 8
+    bimamba: false  # 单向 encoder（= M0-uni Clean 基线口径）
+    use_social_evidence: false  # M2' 社会证据补偿（override 开启）
+    use_motion_features: false
+    use_evidence_clock: false
+    use_observation_features: false
+    use_missing_summary: false
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}
