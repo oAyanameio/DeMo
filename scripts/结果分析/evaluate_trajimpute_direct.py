@@ -99,9 +99,10 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
             k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()
         }
         out = model(batch_dev)
-        # 与 trainer.test_step 一致：最终输出 new_y_hat/new_pi 优先
-        pred = out["new_y_hat"] if out.get("new_y_hat") is not None else out["y_hat"]
-        prob = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
+        # 选点/测试口径统一（方案 A，2026-09-15）：训练选点用 val_minFDE20
+        # （基础 y_hat 分支），测试同用基础 y_hat/pi，禁止 new_y_hat 混用
+        pred = out["y_hat"]
+        prob = out["pi"]
         pred = pred[..., :2]
         if pred.shape[1] != K:
             raise RuntimeError(

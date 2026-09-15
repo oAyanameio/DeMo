@@ -158,6 +158,10 @@ class ModelForecast(nn.Module):
         if self.use_missing_summary:
             nn.init.zeros_(self.missing_summary_embed[-1].weight)
             nn.init.zeros_(self.missing_summary_embed[-1].bias)
+        # social_scale 零初始化同样在 self.apply 之后重申（_init_weights 只触碰
+        # Linear/LayerNorm，此处为防御性重申，保证任何初始化路径都不破坏零初始化）
+        if self.use_social_evidence:
+            nn.init.zeros_(self.social_scale)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -306,6 +310,25 @@ class ModelForecast(nn.Module):
             if pad_mask.dim() == 2:
                 pad_mask = pad_mask.unsqueeze(-1).expand(-1, -1, self.obs_len)
             pad_valid = pad_mask.float()                              # [B,N-1,L]
+            token_valid_f = (neigh_valid * pad_valid)                 # [B,N-1,L] 双重有效
+            # 样本级可靠性门控（M2-v2，2026-09-15）：
+            #   focal_missing_ratio  = focal 历史缺失帧数 / obs_len
+            #   neighbor_reliability = 有效邻居帧 token 数 / 全部真实邻居帧 token 数
+            #                          （分母只计非 padding 邻居 × obs_len；无真实邻居记 0）
+            #   gate = focal_missing_ratio × neighbor_reliability
+            # focal 历史完整（ratio=0）或无有效邻居（reliability=0）时 gate 严格为 0，
+            # 社会残差严格为 0；缺失坐标占位值不进入注意力（无效帧 token 被双重掩码）。
+            focal_missing_ratio = 1.0 - hist_valid_mask[:, 0, :].float().mean(-1, keepdim=True)  # [B,1]
+            real_frames = pad_valid.sum(dim=(1, 2))                   # [B] 真实邻居帧总数
+            valid_frames = token_valid_f.sum(dim=(1, 2))              # [B] 有效邻居帧数
+            neighbor_reliability = torch.where(
+                real_frames > 0,
+                valid_frames / real_frames.clamp(min=1.0),
+                torch.zeros_like(real_frames),
+            ).view(-1, 1)                                             # [B,1]
+            gate = focal_missing_ratio * neighbor_reliability         # [B,1]
+            # 无效帧的占位坐标置零：不产生虚假相对几何，缺失占位值不参与社会特征
+            rel_pos = rel_pos * token_valid_f.unsqueeze(-1)
             frame_feat = torch.cat([
                 rel_pos / 5.0,                        # 相对位置（米→归一尺度）
                 t_norm.expand(B, rel_pos.size(1), self.obs_len, 1),
@@ -314,7 +337,7 @@ class ModelForecast(nn.Module):
             tokens = self.neighbor_frame_embed(frame_feat)      # [B,N-1,L,D]
             B_, Nn, L_, D_ = tokens.shape
             tokens = tokens.view(B_, Nn * L_, D_)                # [B, (N-1)*L, D]
-            token_valid = (neigh_valid * pad_valid).view(B_, Nn * L_).bool()  # 双重掩码
+            token_valid = token_valid_f.view(B_, Nn * L_).bool()  # 双重掩码
             query = x_encoder[:, 0:1, :]                         # [B,1,D] focal token
             # 边界防护：全 token 无效的样本（邻居恰好全缺失/padding）跳过补偿，
             # 否则 softmax 对空集产生 NaN（Hard 高缺失下真实会出现）
@@ -329,10 +352,11 @@ class ModelForecast(nn.Module):
                     key_padding_mask=~token_valid[has_any[:, 0]])
                 attn_out[has_any[:, 0]] = sub
             # has_any 全 False 的样本 attn_out 保持零 → 缩放后无补偿。
-            # 残差注入：focal + social_scale · proj(attn_out)，scale=0 初始严格等价 M0
+            # 门控残差注入：focal_new = focal_old + gate · social_scale · proj(attn_out)
+            # （只修改 focal token，邻居 token 原样保留；scale=0 初始严格等价 M0）
             delta = self.social_proj(attn_out)
             x_encoder = torch.cat([
-                query + self.social_scale * delta,
+                query + gate.unsqueeze(-1) * self.social_scale * delta,
                 x_encoder[:, 1:N, :],
             ], dim=1)
 
