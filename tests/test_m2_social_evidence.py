@@ -9,7 +9,7 @@
 6. padding actor 不影响 focal 输出；
 7. 全部输出无 NaN/Inf；
 8. train/eval 模式下 M2 开关一致（同一模型对象）；
-9. 训练选点指标（val_minFDE20 基础分支）与测试输出分支一致（源码断言）。
+9. 测试输出为官方口径（refine 分支 new_y_hat 优先，与 DeMo 官方 test_step 一致；源码断言）。
 
 正式变体口径：use_motion_features=False、use_evidence_clock=False、
 use_observation_features=False、use_missing_summary=False、bimamba=False。
@@ -223,22 +223,21 @@ def test_no_nan_inf_hard_case():
 
 # ---------------------------------------------------------------- 口径一致性
 
-def test_eval_branch_matches_monitor_branch():
-    """训练选点指标（val_minFDE20）与测试输出必须是同一基础 y_hat 分支。"""
+def test_eval_branch_is_official_refine():
+    """测试输出必须为官方口径：refine 分支 new_y_hat 优先（DeMo 官方 test_step 行为）。"""
     import src.model.trainer_forecast as tf
     import scripts.结果分析.evaluate_trajimpute_direct as ev
 
-    # trainer.test_step 不得把 y_hat 覆盖为 new_y_hat
+    # trainer.test_step 按官方行为把 y_hat 覆盖为 new_y_hat
     src_test = inspect.getsource(tf.Trainer.test_step)
-    assert "new_y_hat" not in src_test, \
-        "test_step 不得覆盖为 new 分支（选点/测试口径混用）"
-    # validation_step 的 val_metrics 消费基础 y_hat（覆盖前计算）
+    assert "out['new_y_hat']" in src_test, \
+        "test_step 必须按官方行为覆盖为 refine 分支"
+    # validation_step 的 val_metrics 消费基础 y_hat（覆盖前计算，与官方一致）
     src_val = inspect.getsource(tf.Trainer.validation_step)
     assert "metrics = self.val_metrics(out" in src_val
-    # evaluator 必须取基础 y_hat（方案 A）
+    # evaluator 必须优先 refine 分支（官方口径）
     src_ev = inspect.getsource(ev.run_evaluation)
-    assert 'pred = out["y_hat"]' in src_ev
-    assert 'out["new_y_hat"]' not in src_ev
+    assert 'out["new_y_hat"]' in src_ev and 'out["new_pi"]' in src_ev
 
 
 def test_variant_switches_consistent_train_eval():

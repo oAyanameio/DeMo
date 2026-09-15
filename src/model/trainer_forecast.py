@@ -218,8 +218,11 @@ class Trainer(pl.LightningModule):
 
     def test_step(self, data, batch_idx) -> None:
         out = self(data)
-        # 选点/测试口径统一（方案 A，2026-09-15）：val_minFDE20 选点用基础
-        # y_hat 分支，test 同口径输出 y_hat/pi（val_new_* 仅作诊断日志）
+        # 官方口径（2026-09-15 裁定）：与 DeMo 官方 test_step 一致——
+        # 测试输出优先 refine 分支 new_y_hat/new_pi（Hybrid Coupling 为最终输出）。
+        if out['new_y_hat'] is not None:
+            out['y_hat'] = out['new_y_hat']
+            out['pi'] = out['new_pi']
         self.submission_handler.format_data(data, out["y_hat"], out["pi"])
         metrics = self.test_metrics(out, data['target'][:, 0])
         self.log_dict(
