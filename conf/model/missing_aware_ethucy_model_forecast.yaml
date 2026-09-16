@@ -21,7 +21,6 @@ target:
     use_gap_condition: false
     use_motion_features: false   # B1（P0.5）经 override 开启
     use_evidence_clock: false   # M1'（P1）经 override 开启：State Query 时间自变量改为距最后有效观测
-    use_social_evidence: false  # M2'（P2）经 override 开启：社会证据补偿（跨行人证据注意力）
     # 主链裁定（2026-09-12）：编码器固定原版单向，与 trajimpute 主配置同步；无须区分单双向。
     bimamba: ${bimamba}
   pretrained_weights: ${pretrained_weights}

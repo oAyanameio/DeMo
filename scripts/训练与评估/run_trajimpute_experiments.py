@@ -49,9 +49,6 @@ VARIANTS = {
            "use_motion_features": True},
     "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
                     "use_motion_features": True, "use_evidence_clock": True},
-    "M2-social": {"use_observation_features": False, "use_missing_summary": False,
-                  "use_motion_features": False, "use_evidence_clock": False,
-                  "use_social_evidence": True},
     "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
                "use_motion_features": False},
     "M2_history": {"use_observation_features": True, "use_missing_summary": True,
@@ -227,7 +224,6 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"model.target.model.use_missing_summary={str(sw['use_missing_summary']).lower()}",
         f"model.target.model.use_motion_features={str(sw.get('use_motion_features', False)).lower()}",
         f"model.target.model.use_evidence_clock={str(sw.get('use_evidence_clock', False)).lower()}",
-        f"model.target.model.use_social_evidence={str(sw.get('use_social_evidence', False)).lower()}",
     ]
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
@@ -334,7 +330,6 @@ def main():
     # model_version 标签（仅 output 命名）：M0-current/B0->0, B1->1
     args.model_version_num = {"M0-current": "0", "B0": "0", "B1": "1",
                               "M1-evidence": "1",
-                              "M2-social": "1",
                               "M1_obs": "1", "M2_history": "2"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]

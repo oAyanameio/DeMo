@@ -41,9 +41,6 @@ VARIANTS = {
            "use_motion_features": True},
     "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
                     "use_motion_features": True, "use_evidence_clock": True},
-    "M2-social": {"use_observation_features": False, "use_missing_summary": False,
-                  "use_motion_features": False, "use_evidence_clock": False,
-                  "use_social_evidence": True},
     "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
                "use_motion_features": False},
     "M2_history": {"use_observation_features": True, "use_missing_summary": True,
@@ -99,9 +96,7 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
             k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()
         }
         out = model(batch_dev)
-        # 官方口径（2026-09-15 裁定）：与 DeMo 官方 test_step 一致——
-        # val_minFDE20（基础分支）选点，测试输出优先 refine 分支 new_y_hat/new_pi。
-        # 官方实现即为此组合，本文全部基线与对比表沿用该口径。
+        # 与 trainer.test_step 一致：最终输出 new_y_hat/new_pi 优先
         pred = out["new_y_hat"] if out.get("new_y_hat") is not None else out["y_hat"]
         prob = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
         pred = pred[..., :2]

@@ -218,8 +218,6 @@ class Trainer(pl.LightningModule):
 
     def test_step(self, data, batch_idx) -> None:
         out = self(data)
-        # 官方口径（2026-09-15 裁定）：与 DeMo 官方 test_step 一致——
-        # 测试输出优先 refine 分支 new_y_hat/new_pi（Hybrid Coupling 为最终输出）。
         if out['new_y_hat'] is not None:
             out['y_hat'] = out['new_y_hat']
             out['pi'] = out['new_pi']
