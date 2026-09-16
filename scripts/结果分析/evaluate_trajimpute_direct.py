@@ -31,8 +31,9 @@ from src.datamodule.trajimpute_dataset import (  # noqa: E402
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
-    "M0": {"use_gap_scaling": False},
-    "E1-gap-scaling": {"use_gap_scaling": True},
+    "M0": {"use_gap_scaling": False, "use_missing_summary": False},
+    "E1-gap-scaling": {"use_gap_scaling": True, "use_missing_summary": False},
+    "S1-module1": {"use_gap_scaling": True, "use_missing_summary": True},
 }
 
 

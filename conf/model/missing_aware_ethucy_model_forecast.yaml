@@ -16,6 +16,7 @@ target:
     dt: 0.4
     obs_len: 8
     use_gap_scaling: false      # E1（Sports-Traj 方案阶段A）经 override 开启：gap-conditioned temporal scaling
+    use_missing_summary: false  # 模块一 per-actor missing-summary 经 override 开启：缺失摘要加性注入 actor token
     # 主链裁定（2026-09-12）：编码器固定原版单向，与 trajimpute 主配置同步；无须区分单双向。
     bimamba: ${bimamba}
   pretrained_weights: ${pretrained_weights}

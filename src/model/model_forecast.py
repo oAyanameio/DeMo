@@ -29,6 +29,7 @@ class ModelForecast(nn.Module):
         dt: float = 0.4,
         obs_len: int = 8,
         use_gap_scaling: bool = False,
+        use_missing_summary: bool = False,
     ) -> None:
         super().__init__()
         # E1（Sports-Traj 方案 §五 阶段 A）：gap-conditioned temporal scaling。
@@ -46,6 +47,21 @@ class ModelForecast(nn.Module):
             )
             nn.init.zeros_(self.gap_scale_mlp[-1].weight)
             nn.init.zeros_(self.gap_scale_mlp[-1].bias)
+
+        # 模块一 per-actor missing-summary conditioning（方案 §3.3）：
+        # 每 actor 的可见性/缺失时长摘要 x_missing_summary [B,N,6] 经 MLP
+        # 映射为 embed_dim 条件向量，零初始化加性注入该 actor 自身的
+        # token（type embedding 之后、Scene Context Transformer 之前）。
+        # 非 Sports-Traj GSM（scene-time ghost token 不在本模块）。
+        # 不新增 token、不动 encoding[:,0] 的 focal 语义；padding actor
+        # 由 key_valid 掩码屏蔽。零初始化 => 初始注入 ≡ 0，与 M0/E1 等价起步。
+        self.use_missing_summary = use_missing_summary
+        if use_missing_summary:
+            self.missing_summary_embed = nn.Sequential(
+                nn.Linear(6, embed_dim), nn.GELU(), nn.Linear(embed_dim, embed_dim)
+            )
+            nn.init.zeros_(self.missing_summary_embed[-1].weight)
+            nn.init.zeros_(self.missing_summary_embed[-1].bias)
 
         self.future_steps = future_steps
         self.dt = dt
@@ -114,10 +130,13 @@ class ModelForecast(nn.Module):
 
         self.apply(self._init_weights)
 
-        # E1 gap_scale_mlp 同理：零初始化必须在 apply 之后重申
+        # E1 gap_scale_mlp / missing_summary_embed 同理：零初始化必须在 apply 之后重申
         if self.use_gap_scaling:
             nn.init.zeros_(self.gap_scale_mlp[-1].weight)
             nn.init.zeros_(self.gap_scale_mlp[-1].bias)
+        if self.use_missing_summary:
+            nn.init.zeros_(self.missing_summary_embed[-1].weight)
+            nn.init.zeros_(self.missing_summary_embed[-1].bias)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -204,6 +223,17 @@ class ModelForecast(nn.Module):
 
         actor_type_embed = self.actor_type_embed[data["x_attr"][..., 2].long()]
         actor_feat = actor_feat + actor_type_embed
+
+        # 模块一：缺失摘要条件向量加到各 actor 自身 token。
+        # padding actor 不参与（key_valid=False 的行乘 0），不污染场景上下文。
+        if self.use_missing_summary:
+            if "x_missing_summary" not in data:
+                raise ValueError(
+                    "use_missing_summary=True requires batch field "
+                    "'x_missing_summary' (enable via trajimpute/missing-aware datasets)"
+                )
+            summary_cond = self.missing_summary_embed(data["x_missing_summary"].float())
+            actor_feat = actor_feat + summary_cond * hist_key_valid_mask[..., None]
 
 
         # scene context features

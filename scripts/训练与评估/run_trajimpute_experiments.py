@@ -39,8 +39,9 @@ DEFAULT_VARIANT = "M0"
 
 # variant -> 模型开关（唯一事实来源）
 VARIANTS = {
-    "M0": {"use_gap_scaling": False},
-    "E1-gap-scaling": {"use_gap_scaling": True},
+    "M0": {"use_gap_scaling": False, "use_missing_summary": False},
+    "E1-gap-scaling": {"use_gap_scaling": True, "use_missing_summary": False},
+    "S1-module1": {"use_gap_scaling": True, "use_missing_summary": True},
 }
 
 PROTOCOLS = {
@@ -209,6 +210,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
         f"model.target.model.use_gap_scaling={str(sw.get('use_gap_scaling', False)).lower()}",
+        f"model.target.model.use_missing_summary={str(sw.get('use_missing_summary', False)).lower()}",
     ]
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
@@ -312,8 +314,9 @@ def main():
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajImpute 正式重训协议固定 K=20")
 
-    # model_version 标签（仅 output 命名）：M0->0, E1->e1
-    args.model_version_num = {"M0": "0", "E1-gap-scaling": "e1"}[args.variant]
+    # model_version 标签（仅 output 命名）：M0->0, E1->e1, S1->s1
+    args.model_version_num = {"M0": "0", "E1-gap-scaling": "e1",
+                              "S1-module1": "s1"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if protocol_cfg["dataset"] == "trajimpute" and protocol_cfg["zero_missing_only"]:
