@@ -140,128 +140,70 @@ Sports-Traj-inspired history encoder
 
 当前 decoder、20 个 mode query、state/mode/hybrid coupling、GMM/Laplace 输出和现有损失先保持不变。
 
-## 五、实验阶段
+## 五、模块化实验方案（一次实现一个模块）
 
-### 阶段 A：缺失距离调制
+原则：**一次实现一个模块、一次训练回答一个问题**。相关性高的设计合并进同一模块一起实现、一起训练；模块内部组件不单独训练。
 
-在当前历史 encoder 上加入 Sports-Traj/BTS 风格的 gap-conditioned temporal scaling：
+| 模块 | 合并内容 | 训练轮次 | 回答的问题 |
+|---|---|---|---|
+| 模块一：缺失感知条件化包 | gap-conditioned temporal scaling（E1，已实现）+ 场景级缺失摘要条件（GSM 改造版：汇总可见性/缺失时长注入 actor token，不动 `encoding[:,0]` 的 focal 语义） | R1 | 显式缺失感知条件化能否稳定超过 M0 |
+| 模块二：时序编码器升级 | Sports-style temporal encoder + mask-aware pooling（最后有效帧特征 ⊕ 有效均值特征 → 投影回 embed_dim） | R2 | 编码器结构升级能否在 R1 胜者之上再提升 |
+| 模块三：辅助重建头 | 共享编码器 + 历史缺失重建辅助 head；`L = L_future + λ·L_hist_missing` | R3 | 联合训练目标能否进一步提升未来预测 |
 
-```text
-M0
- -> M0 + gap-conditioned temporal scaling
-```
+执行规则：
 
-目标：验证缺失持续时间是否比普通 mask channel 提供额外信息。
+1. **递进叠加**：R2 在 R1 胜出配置之上训练；R1 判负则模块一整体废弃，R2 直接基于 M0。
+2. **先筛选后确认**：每模块先用 runner `--screening` 跑 1–2 个场景，胜出才跑五场景确认轮。
+3. **零初始化起步**：模块内新增组件全部零初始化加性设计，与上一轮基线等价起步。
+4. **消融推迟**：模块内组件不单独消融；胜出模块的组件归因留到论文补充阶段。
+5. 预算上限 = 3 轮 × 5 场景（外加 screening 小轮）。
 
-### 阶段 B：Sports-style temporal encoder
+### 模块一实现要点（当前轮）
 
-比较当前历史 Mamba 与 Sports-Traj 风格 temporal encoder：
-
-```text
-M0
- -> M0 + alternative temporal encoder
-```
-
-先保持单向历史输入与当前 decoder 不变。
-
-### 阶段 C：可见性社会交互
-
-在阶段 A/B 中加入以下候选之一：
+E1 的 `use_gap_scaling` 已实现并通过链路检查；GSM-lite summary 与其同属"缺失感知条件化"一个机制族，合并进模块一一次实现：
 
 ```text
-ghost missing summary
-visibility-aware attention bias
+S1 = M0 + gap scaling + GSM-lite missingness summary（零初始化加性）
 ```
 
-不要同时加入，分别进行消融。
+判负则整个模块一废弃，不再拆开追问是哪个组件无效。
 
-### 阶段 D：空间—时间双分支
+## 六、训练矩阵
 
-候选结构：
+| 顺序 | 配置 | 训练范围 | 决策 |
+|---|---|---|---|
+| 0 | 现有 M0 | 复用已有正式结果；无精确匹配才补训 | 固定基线 |
+| 1 | S1 = M0 + 模块一（gap scaling + GSM-lite） | Easy-direct 五场景，seed 2024 | 模块一判胜/判负 |
+| 2 | S2 = R1 胜者 + 模块二 | Easy-direct 五场景 | 模块二判胜/判负 |
+| 3 | S3 = R2 胜者 + 模块三 | Easy-direct 五场景 | 模块三判胜/判负 |
+| 4 | 累计胜者 | Hard-direct 五场景 | Easy→Hard 迁移确认 |
+| 5 | 最终模型去组件版（-模块k） | 代表场景或受限筛选 | 论文消融 |
 
-```text
-per-time spatial Transformer
-+ per-agent temporal Mamba
--> fusion
--> actor-level summary
--> current DeMo decoder
-```
-
-由于当前 DeMo 已经具有 Scene Context Transformer，必须比较：
-
-1. 新 temporal encoder + 当前 Scene Context Transformer；
-2. 新 spatial-temporal encoder + 当前 Scene Context Transformer；
-3. 新 spatial-temporal encoder 替代当前 Scene Context Transformer。
-
-### 阶段 E：联合历史缺失恢复辅助任务
-
-仅在编码器增强确认有效后考虑：
-
-```text
-shared missing-aware encoder
-    ├── history missing reconstruction head
-    └── current future prediction decoder
-```
-
-辅助损失：
-
-```text
-L = L_future + lambda * L_history_missing
-```
-
-历史恢复结果与未来预测结果必须分开报告，不能用历史重建收益代替未来预测收益。
-
-### 阶段 F：生成式 latent 扩展
-
-CVAE 或 diffusion 不是第一阶段内容。只有在确定性/现有 20-mode decoder 上确认缺失编码有效后，才考虑将 latent 作为额外 decoder condition。
-
-## 六、推荐最小实验矩阵
-
-| 编号 | 变化 | 目的 |
-|---|---|---|
-| E0 | 当前正式 M0 | 基线 |
-| E1 | M0 + gap-conditioned temporal scaling | 验证缺失距离调制 |
-| E2 | M0 + Sports-style temporal encoder | 验证 temporal encoder 迁移 |
-| E3 | E2 + ghost missing summary | 验证 GSM 思路 |
-| E4 | E2 + visibility-aware attention bias | 验证可见性感知社会交互 |
-| E5 | E4 + history missing reconstruction auxiliary head | 验证联合恢复/预测 |
-| E6 | E5 + latent conditioning | 后续生成式扩展 |
-
-首轮优先运行：
-
-```text
-E0 -> E1 -> E2 -> E4
-```
-
-不在首轮同时引入 CVAE、双向完整生成器和新的解码器。
+Hard 只跑累计胜者一次，不在中间轮消耗预算；首轮即模块一，最多一次新的 Easy 全量训练。
 
 ## 七、评估要求
 
-除总体指标外，至少按以下条件拆分：
+阶段 1 和阶段 2 使用同一套 K=20 direct 评估。除总体指标外，至少保留：
 
+- 五个场景的逐场景 ADE/FDE；
 - Easy / Hard；
-- 五个场景；
-- 短缺失、中等缺失、长缺失；
-- 缺失比例；
-- 连续缺失长度；
-- 单 agent 缺失与多 agent 缺失；
-- ADE 与 FDE；
-- K=1 与 K=20（如评估脚本支持）。
+- 短缺失与长缺失分组；
+- 平均结果与最差场景结果。
 
-核心观察是：
+首轮决策只回答三个问题：
 
 ```text
-缺失连续长度增加时，FDE 是否改善；
-缺失 agent 增加时，社会交互模块是否仍然有效；
-提升是否在多个场景稳定出现，而不是单一场景或单一种子收益。
+1. gap scaling 是否改善长缺失下的未来预测？
+2. 加入可见性社会条件后，是否在多数场景继续改善？
+3. 收益能否从 Easy 迁移到 Hard？
 ```
 
-所有实验必须保持以下变量隔离：
+变量隔离保持不变：
 
-- encoder 变化与 decoder 变化分开；
-- 模型变化与 missing protocol 变化分开；
-- 训练 mask 分布变化与测试协议变化分开；
-- 共享基础模型增强与缺失感知方法增强分开。
+- decoder、20 个 mode query、loss 和评估口径不变；
+- S1/S2 只改变历史 encoder/社会条件；
+- 不同时改变训练 mask 分布和模型结构；
+- 不用历史重建指标替代未来 ADE/FDE。
 
 ## 八、论文方法定位
 
