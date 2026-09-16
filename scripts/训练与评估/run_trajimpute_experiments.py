@@ -1,7 +1,7 @@
 """TrajImpute 缺失数据重训入口（Easy-direct / Hard-direct）。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `M0-current + Easy-direct` 开始；
+- 默认从 `M0 + Easy-direct` 开始；
 - `Easy-direct` / `Hard-direct` 均使用 TrajImpute 官方缺失 train/val/test；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
@@ -11,7 +11,7 @@
 
 用法：
   PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-      --protocol easy-direct --variant M0-current \
+      --protocol easy-direct --variant M0 \
       --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
       --seed 2024 --gpu 3 --output-root outputs/clean_ethucy
 """
@@ -35,24 +35,12 @@ SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "easy-direct"
-DEFAULT_VARIANT = "M0-current"
+DEFAULT_VARIANT = "M0"
 
 # variant -> 模型开关（唯一事实来源）
 VARIANTS = {
-    "M0-current": {  # = B0：缺失感知全关
-        "use_observation_features": False, "use_missing_summary": False,
-        "use_motion_features": False,
-    },
-    "B0": {"use_observation_features": False, "use_missing_summary": False,
-           "use_motion_features": False},
-    "B1": {"use_observation_features": False, "use_missing_summary": False,
-           "use_motion_features": True},
-    "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
-                    "use_motion_features": True, "use_evidence_clock": True},
-    "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
-               "use_motion_features": False},
-    "M2_history": {"use_observation_features": True, "use_missing_summary": True,
-                   "use_motion_features": False},
+    "M0": {"use_gap_scaling": False},
+    "E1-gap-scaling": {"use_gap_scaling": True},
 }
 
 PROTOCOLS = {
@@ -220,10 +208,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"bimamba={str(args.bimamba).lower()}",
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
-        f"model.target.model.use_observation_features={str(sw['use_observation_features']).lower()}",
-        f"model.target.model.use_missing_summary={str(sw['use_missing_summary']).lower()}",
-        f"model.target.model.use_motion_features={str(sw.get('use_motion_features', False)).lower()}",
-        f"model.target.model.use_evidence_clock={str(sw.get('use_evidence_clock', False)).lower()}",
+        f"model.target.model.use_gap_scaling={str(sw.get('use_gap_scaling', False)).lower()}",
     ]
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
@@ -327,10 +312,8 @@ def main():
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajImpute 正式重训协议固定 K=20")
 
-    # model_version 标签（仅 output 命名）：M0-current/B0->0, B1->1
-    args.model_version_num = {"M0-current": "0", "B0": "0", "B1": "1",
-                              "M1-evidence": "1",
-                              "M1_obs": "1", "M2_history": "2"}[args.variant]
+    # model_version 标签（仅 output 命名）：M0->0, E1->e1
+    args.model_version_num = {"M0": "0", "E1-gap-scaling": "e1"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if protocol_cfg["dataset"] == "trajimpute" and protocol_cfg["zero_missing_only"]:

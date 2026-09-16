@@ -218,10 +218,6 @@ def moflow_ethucy_collate_fn(batch):
         "x_anchor_lag_steps",
         "x_forecast_gap_steps",
         "x_gap_steps",
-        "x_prev_valid_gap",
-        "x_motion_valid",
-        "x_motion_run",
-        "x_missing_summary",
     ]
     for key in _OPTIONAL_EXT_KEYS:
         owners = [i for i, b in enumerate(batch) if key in b]

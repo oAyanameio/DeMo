@@ -27,8 +27,7 @@ from src.datamodule.moflow_ethucy_dataset import moflow_ethucy_collate_fn  # noq
 OPTIONAL_EXT_KEYS = (
     "x_last_valid_angle", "x_last_valid_idx",
     "x_anchor_lag_steps", "x_forecast_gap_steps",
-    "x_gap_steps", "x_prev_valid_gap", "x_motion_valid",
-    "x_motion_run", "x_missing_summary",
+    "x_gap_steps",
 )
 
 
@@ -62,10 +61,8 @@ def make_moflow_item(N=2, T_hist=8, T_fut=12, seed=0, with_ext=False):
         item["x_last_valid_idx"] = torch.full((N,), T_hist - 1, dtype=torch.long)
         item["x_anchor_lag_steps"] = torch.zeros(N, dtype=torch.long)
         item["x_forecast_gap_steps"] = torch.ones(N, dtype=torch.long)
-        for src, dst in [("gap_steps", "x_gap_steps"), ("prev_valid_gap", "x_prev_valid_gap"),
-                         ("motion_valid", "x_motion_valid"), ("motion_run", "x_motion_run")]:
+        for src, dst in [("gap_steps", "x_gap_steps")]:
             item[dst] = miss[src].clone()
-        item["x_missing_summary"] = miss["missing_summary"].clone()
     return item
 
 
@@ -92,9 +89,8 @@ class TestExtFieldsCollate:
         """带扩展字段的样本：collate 后 shape 正确。"""
         batch = moflow_ethucy_collate_fn(
             [make_moflow_item(N=1, with_ext=True), make_moflow_item(N=1, with_ext=True, seed=1)])
-        for k in ("x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run"):
+        for k in ("x_gap_steps",):
             assert batch[k].shape == (2, 1, 8), k
-        assert batch["x_missing_summary"].shape == (2, 1, 6)
         assert batch["x_last_valid_angle"].shape == (2, 1)
         assert batch["x_last_valid_idx"].shape == (2, 1)
         assert batch["x_anchor_lag_steps"].shape == (2, 1)
@@ -120,7 +116,6 @@ class TestExtFieldsCollate:
             [make_moflow_item(N=1, with_ext=True), make_moflow_item(N=3, with_ext=True, seed=1)])
         assert batch["x_gap_steps"].shape == (2, 3, 8)
         assert torch.equal(batch["x_gap_steps"][0, 1:], torch.zeros(2, 8))
-        assert torch.equal(batch["x_missing_summary"][0, 1:], torch.zeros(2, 6))
 
 
 class TestMaskSemantics:

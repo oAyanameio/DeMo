@@ -128,8 +128,7 @@ def test_missing_coords_do_not_enter_diff_or_velocity():
     # 全部模型输入字段 finite
     for k in ["x_positions_diff", "x_velocity", "x_velocity_diff", "x_positions",
               "x_centers", "x_angles", "x_last_valid_angle", "x_gap_steps",
-              "x_prev_valid_gap", "x_motion_valid", "x_motion_run",
-              "x_missing_summary", "target", "target_diff", "target_vel_diff"]:
+              "target", "target_diff", "target_vel_diff"]:
         assert torch.isfinite(s[k]).all(), f"{k} not finite"
     # 有效帧的差分真实等于世界坐标差（局部系为纯平移时）：帧 5 diff = p5-p2 = (6,0)
     # 注意 focal theta 可能非零（最后两有效帧 5->7 方向 (2,0) -> theta=0），此构造下为 0
@@ -182,7 +181,7 @@ def test_single_valid_frame_no_nan_inf():
     assert int(s["x_last_valid_idx"][0]) == 3
     assert int(s["x_forecast_gap_steps"][0]) == 5
     for k in ["x_positions_diff", "x_velocity", "x_velocity_diff", "target",
-              "target_diff", "target_vel_diff", "x_missing_summary"]:
+              "target_diff", "target_vel_diff"]:
         assert torch.isfinite(s[k]).all(), f"{k} not finite (single valid frame)"
 
 
@@ -260,8 +259,7 @@ def test_batch_m0_forward_and_backward():
     from src.model.model_forecast import ModelForecast
     batch = _collated_batch()
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    model = ModelForecast(num_modes=6, bimamba=True, use_observation_features=False,
-                          use_missing_summary=False).cuda()
+    model = ModelForecast(num_modes=6, bimamba=True).cuda()
     out = model(batch)
     assert out["new_y_hat"].shape[1] == 6
     # loss（复用 trainer.cal_loss 的核心项）
@@ -283,8 +281,7 @@ def test_batch_m1_m2_forward():
     batch = _collated_batch(difficulty="Hard", n=3)
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
     for switches in (
-        {"use_observation_features": True, "use_missing_summary": False},
-        {"use_observation_features": True, "use_missing_summary": True},
+        {"use_gap_scaling": True},
     ):
         model = ModelForecast(num_modes=6, bimamba=True, **switches).cuda()
         out = model(batch)

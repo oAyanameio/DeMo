@@ -1,4 +1,4 @@
-# 主入口默认配置：TrajImpute 直接缺失预测（M0 默认；B1/M1'/M2' 经 override 开启）
+# 主入口默认配置：TrajImpute 直接缺失预测（M0 默认；E1 gap-scaling 经 override 开启）
 # 2026-09-13：自建 ETHUCY_benchmark_v1 已作废删除（重切窗口偏离预定义 LOO 划分），
 # 本配置默认指向 TrajImpute 官方 release；完整历史 Clean 参照直接引用原论文数字。
 defaults:

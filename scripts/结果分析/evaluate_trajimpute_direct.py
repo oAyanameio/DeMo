@@ -31,20 +31,8 @@ from src.datamodule.trajimpute_dataset import (  # noqa: E402
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
 VARIANTS = {
-    "M0_base": {"use_observation_features": False, "use_missing_summary": False,
-                "use_motion_features": False},
-    "M0-current": {"use_observation_features": False, "use_missing_summary": False,
-                   "use_motion_features": False},
-    "B0": {"use_observation_features": False, "use_missing_summary": False,
-           "use_motion_features": False},
-    "B1": {"use_observation_features": False, "use_missing_summary": False,
-           "use_motion_features": True},
-    "M1-evidence": {"use_observation_features": False, "use_missing_summary": False,
-                    "use_motion_features": True, "use_evidence_clock": True},
-    "M1_obs": {"use_observation_features": True, "use_missing_summary": False,
-               "use_motion_features": False},
-    "M2_history": {"use_observation_features": True, "use_missing_summary": True,
-                   "use_motion_features": False},
+    "M0": {"use_gap_scaling": False},
+    "E1-gap-scaling": {"use_gap_scaling": True},
 }
 
 
@@ -126,7 +114,7 @@ def main():
     ap.add_argument("--scene", required=True)
     ap.add_argument("--difficulty", default="Easy", choices=["Easy", "Hard"])
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
-    ap.add_argument("--variant", default="M0-current", choices=list(VARIANTS))
+    ap.add_argument("--variant", default="M0", choices=list(VARIANTS))
     ap.add_argument("--K", type=int, default=20)
     ap.add_argument("--seed", type=int, default=2024)
     ap.add_argument("--batch-size", type=int, default=64)

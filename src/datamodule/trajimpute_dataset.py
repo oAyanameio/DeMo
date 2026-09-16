@@ -26,7 +26,6 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
 from .missing_features import build_missing_features
-from .b1_motion_features import build_b1_motion_features
 
 SCENES = ("ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M")
 DIFFICULTIES = ("Easy", "Hard")
@@ -232,11 +231,6 @@ def build_sample(
     diff, velocity, velocity_diff = build_gap_aware_motion(hist_local, hist_valid)
     x_positions_diff = diff
     x_velocity = velocity
-    # B1（P0.5）补充运动证据字段：基于 b1_motion_features 纯函数
-    # （2026-09-08 统一跨缺口语义；x_accel = 相邻两个真实有效速度之差，
-    # 首个有效帧与缺失帧为 0——区别于 velocity_diff（跨缺口差分基线含首个有效帧））：
-    #   x_turn_rate  = 相邻有效步航向变化率（跨缺口，除以步数；无效步为 0）
-    _x_velocity_b1, x_accel, x_turn_rate = build_b1_motion_features(hist_local, hist_valid)
 
     # x_centers：每 actor 最后有效历史位置（局部系，有限值）
     x_centers = hist_local[torch.arange(A), last_valid_idx].clone()
@@ -258,13 +252,9 @@ def build_sample(
 
     x_attr = torch.zeros(A, 3, dtype=torch.uint8)  # type 0 = pedestrian
 
-    # mask-only 缺失感知特征（复用既有纯函数，语义与 M1/M2 一致）
+    # E1 缺失距离特征：距最近有效观测的步数（gap-conditioned scaling 输入）
     miss = build_missing_features(hist_valid)
     x_gap_steps = miss["gap_steps"]
-    x_prev_valid_gap = miss["prev_valid_gap"]
-    x_motion_valid = miss["motion_valid"]
-    x_motion_run = miss["motion_run"]
-    x_missing_summary = miss["missing_summary"]
 
     # target：未来完整；target_diff 第一步从各 actor 最后有效历史位置出发
     target = future_local.clone()
@@ -289,8 +279,6 @@ def build_sample(
         "x_angles": x_angles,
         "x_velocity": x_velocity,
         "x_velocity_diff": velocity_diff,
-        "x_accel": x_accel,
-        "x_turn_rate": x_turn_rate,
         "x_valid_mask": hist_valid.clone(),
         "x_key_valid_mask": hist_valid.any(-1),
         "x_last_valid_angle": x_last_valid_angle,
@@ -298,10 +286,6 @@ def build_sample(
         "x_anchor_lag_steps": x_anchor_lag,
         "x_forecast_gap_steps": x_forecast_gap,
         "x_gap_steps": x_gap_steps,
-        "x_prev_valid_gap": x_prev_valid_gap,
-        "x_motion_valid": x_motion_valid,
-        "x_motion_run": x_motion_run,
-        "x_missing_summary": x_missing_summary,
         "origin": origin.float().view(1, 2),
         "theta": theta.view(1),
         "degenerate_heading": degenerate,
@@ -395,16 +379,14 @@ class TrajImputeDataset(Dataset):
 
 
 def trajimpute_collate_fn(batch):
-    """TrajImpute collate：含 B1 运动证据与缺失派生标量字段。"""
+    """TrajImpute collate：含 E1 缺失距离字段。"""
     data = {}
     for key in [
         "x_positions_diff", "x_attr", "x_positions", "x_centers",
         "x_angles", "x_velocity", "x_velocity_diff",
-        "x_accel", "x_turn_rate",
         "x_last_valid_angle", "x_last_valid_idx",
         "x_anchor_lag_steps", "x_forecast_gap_steps",
-        "x_gap_steps", "x_prev_valid_gap", "x_motion_valid", "x_motion_run",
-        "x_missing_summary",
+        "x_gap_steps",
     ]:
         data[key] = pad_sequence([b[key] for b in batch], batch_first=True)
     for key in ["target", "target_diff", "target_vel_diff"]:

@@ -2,7 +2,7 @@
 
 扫描 outputs/trajimpute_direct/<variant>_<scene>_<protocol>_seed<seed>/eval/*/results.json，
 按 scene/seed/variant 聚合 minFDE20 等指标，输出：
-  summary.json / summary.csv / comparison.md（含 M0-strong 裁定所需的配对差值）
+  summary.json / summary.csv / comparison.md（含配对差值）
 
 不把 Clean-direct 与 Easy-direct、不同 seed、非配对版本混合平均。
 """
@@ -159,15 +159,15 @@ def main():
             f"| {r['minADE_K']:.4f} | {r['minFDE_K']:.4f} | {r['ADE@1']:.4f} "
             f"| {r['FDE@1']:.4f} | {r['MR']:.4f} |")
 
-    # 配对差（B1 vs B0=M0-current；同 protocol/seed/backbone）
+    # 配对差（E1 vs M0；同 protocol/seed/backbone）
     seeds = sorted({r["seed"] for r in rows})
     for seed in seeds:
         for proto in sorted({r["protocol"] for r in rows}):
-            for comp in ("B1", "M1_obs", "M2_history"):
-                diffs = paired_diff(rows, "M0-current", comp, proto, seed)
+            for comp in ("E1-gap-scaling",):
+                diffs = paired_diff(rows, "M0", comp, proto, seed)
                 if not diffs:
                     continue
-                md.append(f"\n## 配对差 {comp} − M0-current（{proto}，seed={seed}，负值={comp} 更好）\n")
+                md.append(f"\n## 配对差 {comp} − M0（{proto}，seed={seed}，负值={comp} 更好）\n")
                 md.append("| scene | ΔminADE | ΔminFDE | ΔminFDE% | ΔMR |")
                 md.append("|---|---:|---:|---:|---:|")
                 for d in diffs:

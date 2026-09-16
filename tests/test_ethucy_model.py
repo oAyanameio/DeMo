@@ -39,6 +39,7 @@ def _make_model():
         embed_dim=128,
         future_steps=12,
         num_actor_types=1,
+        num_modes=6,  # 显式指定：正式主链默认 20，本测试只测机制不测默认值
     ).to(DEVICE)
 
 
