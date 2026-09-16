@@ -56,7 +56,7 @@ def get_git_revision():
         return "unknown"
 
 
-def build_model(variant: str, num_modes: int, bimamba: bool = True):
+def build_model(variant: str, num_modes: int, bimamba: bool = False):
     from src.model.model_forecast import ModelForecast
     switches = VARIANTS[variant]
     return ModelForecast(

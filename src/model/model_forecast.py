@@ -24,7 +24,7 @@ class ModelForecast(nn.Module):
         drop_path=0.2,
         future_steps: int = 12,
         num_actor_types: int = 1,
-        num_modes: int = 6,
+        num_modes: int = 20,
         bimamba: bool = False,
         dt: float = 0.4,
         obs_len: int = 8,

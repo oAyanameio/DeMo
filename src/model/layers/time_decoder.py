@@ -71,7 +71,7 @@ class GMMPredictor(nn.Module):
     
 
 class TimeDecoder(nn.Module):
-    def __init__(self, future_len=60, dim=128, num_modes=6):
+    def __init__(self, future_len=60, dim=128, num_modes=20):
         super(TimeDecoder, self).__init__()
         self.num_modes = num_modes
 
