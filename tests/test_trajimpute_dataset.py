@@ -276,16 +276,13 @@ def test_batch_m0_forward_and_backward():
 
 
 @pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
-def test_batch_m1_m2_forward():
+def test_batch_m0_forward_hard():
     from src.model.model_forecast import ModelForecast
     batch = _collated_batch(difficulty="Hard", n=3)
     batch = {k: (v.cuda() if torch.is_tensor(v) else v) for k, v in batch.items()}
-    for switches in (
-        {"use_gap_scaling": True},
-    ):
-        model = ModelForecast(num_modes=6, bimamba=True, **switches).cuda()
-        out = model(batch)
-        assert torch.isfinite(out["new_y_hat"]).all()
+    model = ModelForecast(num_modes=6, bimamba=True).cuda()
+    out = model(batch)
+    assert torch.isfinite(out["new_y_hat"]).all()
 
 
 def test_collate_padding_semantics():

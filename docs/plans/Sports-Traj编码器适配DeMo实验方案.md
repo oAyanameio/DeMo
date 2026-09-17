@@ -160,27 +160,19 @@ Sports-Traj-inspired history encoder
 4. **消融推迟**：模块内组件不单独消融；胜出模块的组件归因留到论文补充阶段。
 5. 预算上限由用户在每轮结束后决定；默认不预设必须完成三轮。
 
-### 模块一实现要点（当前轮）
+### 模块二实现要点（当前轮）
 
-E1 的 `use_gap_scaling` 已实现并通过链路检查；逐 actor 缺失摘要条件化与其同属"缺失感知条件化"一个机制族，合并进模块一一次实现：
+模块一（缺失感知条件化包：gap scaling + per-actor missing summary）已废弃，代码与结果痕迹已清理；其两条通用教训沉淀为实验纪律：配对初始化（对照双方共享同一初始 backbone state）与取数陷阱（同场景 Easy/Hard 目录仅难度段不同）。模块二基于 M0 开工：
 
 ```text
-S1 = M0 + gap scaling + per-actor missing-summary conditioning（零初始化加性）
+S2 = M0 + Sports-style temporal encoder + mask-aware pooling
 ```
 
-判负则整个模块一作为组合方案判负，不据此分别断言 gap scaling 或缺失摘要单组件无效；组件归因留到后续受限消融。当前实现的缺失摘要不是 Sports-Traj GSM，结果不得表述为 GSM 已验证。
-
-### R1 判负后的修正路线（2026-09-17 更新）
-
-R1 首轮判负，但训后诊断发现两个实现混杂因素（gap gate 无界尺度失控：α(0) 训至 8千~1万倍；summary 零缺失非零注入），且 M0/S1 从头训练时 RNG 流分叉（178/430 共享 tensor 不同）——本轮判"当前实现负"，不判"缺失条件化思想负"。因此不直接废弃模块一，先修正后低成本复筛：
-
-1. gap gate 锚定：有效帧（gap=0）强制 α=1；log α 有界；每 epoch 记录 α(g) 曲线
-2. summary 零缺失中性：注入形式改 r_i = missing_rate_i · MLP(s_i)，零缺失注入恒为零（MLP bias 非零也不泄漏）
-3. 配对初始化：保存 M0 初始 backbone state_dict，S1 显式加载（新分支零初始化），保证共同参数逐位相同
-4. 复筛协议：仅 UNIV Easy 单场景，M0/S1 配对（同初始权重）；通过再五场景
-5. 修正版仍判负，则模块一整体废弃，模块二基于 M0
-
-结果明细与注意事项见 docs/results/实验总汇总.md §8。
+- 时序编码器：替换/增强现有 4 层单向历史 Mamba（结构按 §四 接口适配，输出仍为 [B, N, D]）
+- mask-aware pooling：actor summary 不固定取最后帧——最后有效观测帧特征 ⊕ 有效历史 mean pooling 特征，拼接后投影回 embed_dim
+- 完整历史（mask 全 1）时 pooling 须退化为与原"取最后帧"一致的语义或严格等价起步
+- 对照纪律：与 M0 配对初始化（同一 init ckpt 显式加载双方）
+- 首轮筛选：UNIV Easy 单场景配对，通过再五场景确认
 
 当前实现边界：
 

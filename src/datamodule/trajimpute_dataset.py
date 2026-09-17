@@ -252,10 +252,9 @@ def build_sample(
 
     x_attr = torch.zeros(A, 3, dtype=torch.uint8)  # type 0 = pedestrian
 
-    # E1 缺失距离特征 + 模块一 GSM-lite 摘要（均 mask-only 纯函数派生）
+    # E1 缺失距离特征：距最近有效观测的步数（gap-conditioned scaling 输入）
     miss = build_missing_features(hist_valid)
     x_gap_steps = miss["gap_steps"]
-    x_missing_summary = miss["missing_summary"]
 
     # target：未来完整；target_diff 第一步从各 actor 最后有效历史位置出发
     target = future_local.clone()
@@ -287,7 +286,6 @@ def build_sample(
         "x_anchor_lag_steps": x_anchor_lag,
         "x_forecast_gap_steps": x_forecast_gap,
         "x_gap_steps": x_gap_steps,
-        "x_missing_summary": x_missing_summary,
         "origin": origin.float().view(1, 2),
         "theta": theta.view(1),
         "degenerate_heading": degenerate,
@@ -388,7 +386,7 @@ def trajimpute_collate_fn(batch):
         "x_angles", "x_velocity", "x_velocity_diff",
         "x_last_valid_angle", "x_last_valid_idx",
         "x_anchor_lag_steps", "x_forecast_gap_steps",
-        "x_gap_steps", "x_missing_summary",
+        "x_gap_steps",
     ]:
         data[key] = pad_sequence([b[key] for b in batch], batch_first=True)
     for key in ["target", "target_diff", "target_vel_diff"]:
