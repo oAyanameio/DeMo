@@ -160,19 +160,11 @@ Sports-Traj-inspired history encoder
 4. **消融推迟**：模块内组件不单独消融；胜出模块的组件归因留到论文补充阶段。
 5. 预算上限由用户在每轮结束后决定；默认不预设必须完成三轮。
 
-### 模块二实现要点（当前轮）
+### 模块化路线现状（2026-09-17 终局）
 
-模块一（缺失感知条件化包：gap scaling + per-actor missing summary）已废弃，代码与结果痕迹已清理；其两条通用教训沉淀为实验纪律：配对初始化（对照双方共享同一初始 backbone state）与取数陷阱（同场景 Easy/Hard 目录仅难度段不同）。模块二基于 M0 开工：
+模块一（缺失感知条件化包）、模块二（mask-aware pooling）经配对筛选判负废弃，模块三（辅助重建头）不再执行——Sports-Traj 借鉴路线整体关闭。代码已回滚至纯 M0，判负轮次结果痕迹按删除铁律清理。沉淀的永久纪律：配对初始化（对照双方共享同一初始 backbone state）、取数陷阱（同场景 Easy/Hard 目录仅难度段不同）、top-1 与 best-of-K 指标可能反向分裂（mode 集中度 vs 覆盖多样性，判负时须五指标齐看）。
 
-```text
-S2 = M0 + Sports-style temporal encoder + mask-aware pooling
-```
-
-- 时序编码器：替换/增强现有 4 层单向历史 Mamba（结构按 §四 接口适配，输出仍为 [B, N, D]）
-- mask-aware pooling：actor summary 不固定取最后帧——最后有效观测帧特征 ⊕ 有效历史 mean pooling 特征，拼接后投影回 embed_dim
-- 完整历史（mask 全 1）时 pooling 须退化为与原"取最后帧"一致的语义或严格等价起步
-- 对照纪律：与 M0 配对初始化（同一 init ckpt 显式加载双方）
-- 首轮筛选：UNIV Easy 单场景配对，通过再五场景确认
+当前基线：M0（Easy 0.245/0.399）。后续方向由用户另行立项。
 
 当前实现边界：
 

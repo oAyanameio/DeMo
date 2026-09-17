@@ -15,7 +15,6 @@ target:
     num_modes: 20
     dt: 0.4
     obs_len: 8
-    use_mask_pooling: false    # 模块二（Sports-Traj 方案）经 override 开启：mask-aware pooling 替换固定最后帧
     # 主链裁定（2026-09-12）：编码器固定原版单向，与 trajimpute 主配置同步；无须区分单双向。
     bimamba: ${bimamba}
   pretrained_weights: ${pretrained_weights}

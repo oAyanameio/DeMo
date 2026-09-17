@@ -28,7 +28,6 @@ class ModelForecast(nn.Module):
         bimamba: bool = False,
         dt: float = 0.4,
         obs_len: int = 8,
-        use_mask_pooling: bool = False,
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
@@ -59,22 +58,6 @@ class ModelForecast(nn.Module):
         )
         self.norm_f = RMSNorm(embed_dim, eps=1e-5)
         self.drop_path = DropPath(drop_path)
-
-        # 模块二（Sports-Traj 方案 §四/§五）：mask-aware pooling。
-        # M0 固定取 Mamba 输出最后帧；模块二改为
-        #   [最后有效观测帧特征 ⊕ 有效帧 mean pooling] -> concat -> 投影回 embed_dim
-        # 完整历史时最后有效帧=最后帧，mean pooling 补充全程信息；
-        # 单调 Mamba 特征下两路均有限。投影层零初始化加性：
-        #   out = last_feat + pool_proj(concat(last, mean))
-        # 起步时 pool_proj≡0 => 与 M0 完全一致（含 padding 语义）。
-        self.use_mask_pooling = use_mask_pooling
-        if use_mask_pooling:
-            self.pool_proj = nn.Sequential(
-                nn.Linear(embed_dim * 2, embed_dim), nn.GELU(),
-                nn.Linear(embed_dim, embed_dim)
-            )
-            nn.init.zeros_(self.pool_proj[-1].weight)
-            nn.init.zeros_(self.pool_proj[-1].bias)
 
         self.pos_embed = nn.Sequential(
             nn.Linear(4, embed_dim),
@@ -113,10 +96,6 @@ class ModelForecast(nn.Module):
         nn.init.normal_(self.actor_type_embed, std=0.02)
 
         self.apply(self._init_weights)
-        # 模块二 pool_proj 输出层零初始化须在 apply 之后重申
-        if self.use_mask_pooling:
-            nn.init.zeros_(self.pool_proj[-1].weight)
-            nn.init.zeros_(self.pool_proj[-1].bias)
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -166,17 +145,7 @@ class ModelForecast(nn.Module):
             residual_in_fp32=True  
         )
 
-        # 模块二 mask-aware pooling：替换固定取最后帧。
-        # sel_valid [M, L]：参与 Mamba 的行的帧级掩码；
-        # gather 每行最后有效帧特征 + 有效帧 mean；缺失占位帧不进池化。
-        if self.use_mask_pooling:
-            sel_valid = hist_valid_mask.view(B * N, L)[hist_feat_key_valid]  # [M, L]
-            last_idx = sel_valid.float().cumsum(dim=1).argmax(dim=1)        # 最后有效帧
-            last_feat = actor_feat[torch.arange(actor_feat.shape[0], device=actor_feat.device), last_idx]  # [M, D]
-            mean_feat = (actor_feat * sel_valid[..., None]).sum(1) / sel_valid.sum(1, keepdim=True).clamp(min=1)  # [M, D]
-            actor_feat = last_feat + self.pool_proj(torch.cat([last_feat, mean_feat], dim=-1))
-        else:
-            actor_feat = actor_feat[:, -1]
+        actor_feat = actor_feat[:, -1]
         actor_feat_tmp = torch.zeros(
             B * N, actor_feat.shape[-1], dtype=actor_feat.dtype, device=actor_feat.device
         )

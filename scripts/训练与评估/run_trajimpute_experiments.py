@@ -40,7 +40,6 @@ DEFAULT_VARIANT = "M0"
 # variant -> 模型开关（唯一事实来源）
 VARIANTS = {
     "M0": {},
-    "S2-module2": {"use_mask_pooling": True},
 }
 
 PROTOCOLS = {
@@ -208,17 +207,12 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"bimamba={str(args.bimamba).lower()}",
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
-        f"model.target.model.use_mask_pooling={str(sw.get('use_mask_pooling', False)).lower()}",
     ]
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
                             f"limit_val_batches={args.limit_batches}"]
     train_cmd = [PY, "-u", "train.py", f"--config-name={CONFIG_NAME}"] + train_overrides + [
         f"hydra.run.dir={run_dir / 'train'}"]
-    # 配对初始化（实验纪律 2026-09-17）：迭代模型与 M0 对照共享同一
-    # 初始 backbone state（make_paired_init.py 产物），杜绝 RNG 流分叉
-    if getattr(args, "init_from", None):
-        train_cmd.append(f"pretrained_weights={args.init_from}")
 
     # 2026-09-13：断点续训 + 被杀自动重拉（外源 SIGTERM 防御）。
     # train.py 原生支持 ckpt_path=last.ckpt；训练失败时只要 last.ckpt 存在就续训，
@@ -311,16 +305,13 @@ def main():
     ap.add_argument("--screening", action="store_true",
                     help="标记为筛选实验（正式非确认性）")
     ap.add_argument("--limit-batches", type=int, default=2, help="smoke 用")
-    ap.add_argument("--init-from", default=None,
-                    help="配对初始化 checkpoint（make_paired_init.py 产物）；"
-                         "迭代模型与 M0 共享初始 backbone state")
     args = ap.parse_args()
 
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajImpute 正式重训协议固定 K=20")
 
-    # model_version 标签（仅 output 命名）：M0->0, S2->s2
-    args.model_version_num = {"M0": "0", "S2-module2": "s2"}[args.variant]
+    # model_version 标签（仅 output 命名）：M0->0
+    args.model_version_num = {"M0": "0"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if protocol_cfg["dataset"] == "trajimpute" and protocol_cfg["zero_missing_only"]:
