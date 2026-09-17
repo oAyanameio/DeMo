@@ -33,15 +33,17 @@ class ModelForecast(nn.Module):
     ) -> None:
         super().__init__()
         # E1（Sports-Traj 方案 §五 阶段 A）：gap-conditioned temporal scaling。
-        # 每 agent 每历史时刻的缺失距离 gap（x_gap_steps）经 MLP 映射为
-        # 调制系数 alpha = exp(-MLP(gap/obs_len))，作用在 hist_embed_mlp
-        # 输出的 temporal feature 上：h_gap = h * alpha(gap)。
-        # exp 保证 alpha > 0；"缺失越长权重越低"(alpha<1) 是训练学得的
-        # 方向而非硬约束（不加 ReLU/softplus：零初始化下会截断梯度）。
-        # MLP 末层零初始化 -> 初始 alpha ≡ 1，加载 M0 权重后与 M0 前向
-        # 完全一致（训练动态从 M0 出发，不引入随机扰动）。
+        # R1 判负后修正版（2026-09-17，见 docs/results/实验总汇总.md §8）：
+        #   alpha(g) = exp(-tanh(MLP(g/obs_len)) * GAP_LOG_ALPHA_MAX)
+        # 修正点：
+        #   1) 锚定：有效帧（gap=0）在 forward 中显式 where 强制 alpha=1，
+        #      完整历史对该机制精确无操作（不论训练后 bias 为何值）；
+        #   2) 有界：tanh∈[-1,1] 限制 log alpha ∈ [-max, +max]（默认 max=2，
+        #      即 alpha ∈ [exp(-2), exp(2)]≈[0.135, 7.39]），杜绝训后 8千~1万倍
+        #      全局尺度捷径；"缺失降权"仍是训练学得的方向。
         self.use_gap_scaling = use_gap_scaling
         if use_gap_scaling:
+            self.gap_log_alpha_max = 2.0
             self.gap_scale_mlp = nn.Sequential(
                 nn.Linear(1, 64), nn.GELU(), nn.Linear(64, 1)
             )
@@ -49,12 +51,12 @@ class ModelForecast(nn.Module):
             nn.init.zeros_(self.gap_scale_mlp[-1].bias)
 
         # 模块一 per-actor missing-summary conditioning（方案 §3.3）：
-        # 每 actor 的可见性/缺失时长摘要 x_missing_summary [B,N,6] 经 MLP
-        # 映射为 embed_dim 条件向量，零初始化加性注入该 actor 自身的
-        # token（type embedding 之后、Scene Context Transformer 之前）。
+        # R1 判负后修正版：注入形式 r_i = missing_rate_i · MLP(s_i)，
+        # 零缺失 actor（missing_rate=0）注入恒为零——即使 MLP bias 学到
+        # 非零值也不泄漏到完整历史 actor；missing_rate 取 summary[0]。
         # 非 Sports-Traj GSM（scene-time ghost token 不在本模块）。
         # 不新增 token、不动 encoding[:,0] 的 focal 语义；padding actor
-        # 由 key_valid 掩码屏蔽。零初始化 => 初始注入 ≡ 0，与 M0/E1 等价起步。
+        # 由 key_valid 掩码屏蔽。末层零初始化 => 初始注入 ≡ 0。
         self.use_missing_summary = use_missing_summary
         if use_missing_summary:
             self.missing_summary_embed = nn.Sequential(
@@ -172,10 +174,10 @@ class ModelForecast(nn.Module):
 
         # unidirectional mamba
         actor_feat = self.hist_embed_mlp(hist_feat[hist_feat_key_valid].contiguous())
-        # E1：gap-conditioned temporal scaling——缺失距离越长，该时刻特征
-        # 可靠性越低。alpha=exp(-MLP(gap/obs_len))>0，作用在 Mamba 前
-        # 的 temporal embedding 上；MLP 零初始化 ⇒ alpha≡1 与 M0 等价起步，
-        # "缺失只降权不升权"由训练学得（见 __init__ 注释）。
+        # E1：gap-conditioned temporal scaling（修正版）——缺失距离越长，
+        # 该时刻特征可靠性越低。alpha = exp(-tanh(MLP(g/obs_len))·max)：
+        # g=0 恒 alpha=1（完整历史精确无操作）；log alpha 有界于 ±max，
+        # 杜绝全局尺度捷径（R1 判负根因之一）。
         if self.use_gap_scaling:
             if "x_gap_steps" not in data:
                 raise ValueError(
@@ -184,7 +186,13 @@ class ModelForecast(nn.Module):
                 )
             gap_all = data["x_gap_steps"] / self.obs_len          # [B, N, L]
             gap_sel = gap_all.view(-1, L)[hist_feat_key_valid]     # [M, L]
-            alpha = torch.exp(-self.gap_scale_mlp(gap_sel[..., None]))  # [M, L, 1]
+            log_alpha = torch.tanh(self.gap_scale_mlp(gap_sel[..., None])) \
+                * self.gap_log_alpha_max                           # [M, L, 1]
+            alpha = torch.exp(-log_alpha)                          # [M, L, 1]
+            # 显式锚定：有效帧（gap=0）强制 alpha=1——不论 MLP bias 训成
+            # 什么值，完整历史对该机制精确无操作（R1 修正要求 1）
+            alpha = torch.where(gap_sel[..., None] == 0,
+                                torch.ones_like(alpha), alpha)
             actor_feat = actor_feat * alpha
         residual = None
         for blk_mamba in self.hist_embed_mamba:
@@ -232,7 +240,11 @@ class ModelForecast(nn.Module):
                     "use_missing_summary=True requires batch field "
                     "'x_missing_summary' (enable via trajimpute/missing-aware datasets)"
                 )
-            summary_cond = self.missing_summary_embed(data["x_missing_summary"].float())
+            summary_input = data["x_missing_summary"].float()
+            # 修正版：missing_rate 门控——零缺失 actor 注入恒为零，
+            # 消除 R1 判负根因之二（完整历史 token 被重参数化）。
+            missing_rate = summary_input[..., :1]                  # [B, N, 1]
+            summary_cond = self.missing_summary_embed(summary_input) * missing_rate
             actor_feat = actor_feat + summary_cond * hist_key_valid_mask[..., None]
 
 
