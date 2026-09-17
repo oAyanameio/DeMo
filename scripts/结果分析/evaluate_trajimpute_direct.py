@@ -32,6 +32,7 @@ from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # no
 
 VARIANTS = {
     "M0": {},
+    "S2-module2": {"use_mask_pooling": True},
 }
 
 
