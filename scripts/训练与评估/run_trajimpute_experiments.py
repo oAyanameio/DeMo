@@ -55,6 +55,14 @@ PROTOCOLS = {
         "zero_missing_only": False,
         "suffix": "",
     },
+    "mixed-direct": {
+        "dataset": "trajimpute",
+        "difficulty": "Hard",
+        "train_difficulties": ["Easy", "Hard"],
+        "val_difficulties": ["Easy", "Hard"],
+        "zero_missing_only": False,
+        "suffix": "_mixed",
+    },
 }
 
 
@@ -120,6 +128,8 @@ def build_manifest(args, protocol_cfg):
             "type": "official_release",
             "root": str(data_root),
             "difficulty": protocol_cfg["difficulty"],
+            "train_difficulties": protocol_cfg.get("train_difficulties", [protocol_cfg["difficulty"]]),
+            "val_difficulties": protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]]),
             "direct_prediction": True,
             "is_trajimpute_clean_split": False,
         },
@@ -194,6 +204,8 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
     train_overrides = [
         f"scene={scene}",
         f"difficulty={protocol_cfg['difficulty']}",
+        f"train_difficulties={protocol_cfg.get('train_difficulties', [protocol_cfg['difficulty']])}",
+        f"val_difficulties={protocol_cfg.get('val_difficulties', [protocol_cfg['difficulty']])}",
         f"zero_missing_only={str(protocol_cfg['zero_missing_only']).lower()}",
         f"data_root={args.data_root}",
         f"seed={args.seed}",

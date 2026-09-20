@@ -23,7 +23,7 @@ import pickle
 import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset
+from torch.utils.data import ConcatDataset, Dataset
 
 from .missing_features import build_missing_features
 
@@ -425,6 +425,8 @@ class TrajImputeDataModule(LightningDataModule):
         data_root: str,
         scene: str,
         difficulty: str,
+        train_difficulties=None,
+        val_difficulties=None,
         obs_len: int = 8,
         pred_len: int = 12,
         train_batch_size: int = 64,
@@ -439,6 +441,8 @@ class TrajImputeDataModule(LightningDataModule):
         self.data_root = data_root
         self.scene = scene
         self.difficulty = difficulty
+        self.train_difficulties = tuple(train_difficulties or (difficulty,))
+        self.val_difficulties = tuple(val_difficulties or (difficulty,))
         self.obs_len = obs_len
         self.pred_len = pred_len
         self.train_batch_size = train_batch_size
@@ -455,12 +459,26 @@ class TrajImputeDataModule(LightningDataModule):
             self.obs_len, self.pred_len, zero_missing_only=self.zero_missing_only,
         )
 
+    def _dataset_for_difficulty(self, split: str, difficulty: str):
+        return TrajImputeDataset(
+            self.data_root, self.scene, difficulty, split,
+            self.obs_len, self.pred_len, zero_missing_only=self.zero_missing_only,
+        )
+
+    def _datasets(self, split: str, difficulties):
+        return [self._dataset_for_difficulty(split, difficulty)
+                for difficulty in difficulties]
+
     def setup(self, stage=None):
         if self.test:
             self.test_dataset = self._dataset("test")
         else:
-            self.train_dataset = self._dataset("train")
-            self.val_dataset = self._dataset("val")
+            train_sets = self._datasets("train", self.train_difficulties)
+            val_sets = self._datasets("val", self.val_difficulties)
+            self.train_dataset = (train_sets[0] if len(train_sets) == 1
+                                  else ConcatDataset(train_sets))
+            self.val_dataset = (val_sets[0] if len(val_sets) == 1
+                                else ConcatDataset(val_sets))
 
     def train_dataloader(self):
         return DataLoader(

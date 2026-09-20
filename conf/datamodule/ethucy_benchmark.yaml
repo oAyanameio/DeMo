@@ -1,0 +1,16 @@
+name: ethucy_benchmark
+phase: default
+
+target:
+  _target_: src.datamodule.ethucy_benchmark_datamodule.EthUcyBenchmarkDataModule
+
+  data_root: ${data_root}
+  fold: ${fold}
+  obs_len: 8
+  pred_len: 12
+  train_batch_size: ${batch_size}
+  val_batch_size: ${batch_size}
+  test_batch_size: ${batch_size}
+  num_workers: ${num_workers}
+  pin_memory: True
+  test: ${test}
