@@ -143,21 +143,7 @@ MR = 0.187
 
 P2-A **通过，作为训练分布失配证据**，但不是模型改进结果。
 
-下一步不直接做复杂 SSM，先完成 P2-B：
-
-```text
-Mixed 0–7 missingness training → Easy test / Hard test
-```
-
-建议的最小 Mixed 方案：
-
-- 保留官方 Easy/Hard 的 train/val 数据边界；
-- 训练集按缺失等级 0–7 进行均衡或预注册采样；
-- 不改变模型结构、loss、K、checkpoint monitor；
-- 测试仍使用官方 Easy/Hard test；
-- 与 Easy-train 和 Hard-train M0 做三方比较。
-
-只有在 Mixed training 仍无法解释高缺失尾部后，才进入 P3-A GRU-D-style decay control。
+P2-B Mixed 已完成并已补齐 Easy/Hard 交叉测试；完整结果见《[缺失分布交叉泛化结果](缺失分布交叉泛化结果.md)》。当前裁定：naive Easy+Hard 混合训练与 Hard-specific training 整体接近，但没有稳定优势；高缺失尾部仍然存在。
 
 ---
 

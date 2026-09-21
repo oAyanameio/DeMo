@@ -32,7 +32,7 @@ pip install -e mamba
 
 ### SDD（Stanford Drone Dataset）
 
-仓库内无 SDD 预处理脚本。需自行准备 **MoFlow 格式源数据**（`data/sdd/`，即 MoFlow 协议的 pkl/划分格式）。
+仓库内无 SDD 预处理脚本。需自行准备 **标准 pkl/划分格式源数据**（`data/sdd/`）。
 
 ### TrajImpute 官方缺失历史数据
 
@@ -58,7 +58,7 @@ PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_ex
 
 ```
 conf/                 Hydra 配置（ETH/UCY、SDD、TrajImpute）
-src/datamodule/       ETH/UCY、SDD、MoFlow 与 TrajImpute 数据管线
+src/datamodule/       ETH/UCY、SDD 与 TrajImpute 数据管线
 src/model/            DeMo actor-only（ModelForecast + TimeDecoder）
 src/metrics/          minADE/minFDE/MR/brierFDE
 scripts/              数据集构建 / 训练与评估 / 审计与校验 / 结果分析
@@ -71,7 +71,7 @@ docs/                 研究文档、实验结果、审计报告、数据集说�
 - 总汇总：`docs/results/主线实验记录.md`
 - 逐折数字：`outputs/*/results.json`
 - 审计报告：`docs/audits/`
-- MoFlow vs DeMo 完整数据对照：`docs/results/完整数据基线对比.md`
+- 完整数据基线与公开 SOTA 参考：`docs/results/完整数据基线对比.md`
 
 ## 上游出处
 
