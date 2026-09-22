@@ -60,8 +60,30 @@ PROTOCOLS = {
         "difficulty": "Hard",
         "train_difficulties": ["Easy", "Hard"],
         "val_difficulties": ["Easy", "Hard"],
+        "test_difficulties": ["Easy", "Hard"],
+        "train_sampling_scheme": "natural",
         "zero_missing_only": False,
         "suffix": "_mixed",
+    },
+    "severity-balanced": {
+        "dataset": "trajimpute",
+        "difficulty": "Hard",
+        "train_difficulties": ["Easy", "Hard"],
+        "val_difficulties": ["Easy", "Hard"],
+        "test_difficulties": ["Easy", "Hard"],
+        "train_sampling_scheme": "severity_balanced",
+        "zero_missing_only": False,
+        "suffix": "_severity_balanced",
+    },
+    "evidence-balanced": {
+        "dataset": "trajimpute",
+        "difficulty": "Hard",
+        "train_difficulties": ["Easy", "Hard"],
+        "val_difficulties": ["Easy", "Hard"],
+        "test_difficulties": ["Easy", "Hard"],
+        "train_sampling_scheme": "evidence_balanced",
+        "zero_missing_only": False,
+        "suffix": "_evidence_balanced",
     },
 }
 
@@ -121,6 +143,17 @@ def select_best_checkpoint(train_dir, monitor):
 
 def build_manifest(args, protocol_cfg):
     data_root = Path(args.data_root)
+    train_difficulties = protocol_cfg.get("train_difficulties", [protocol_cfg["difficulty"]])
+    val_difficulties = protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]])
+    test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
+    files = {
+        scene: {
+            "train": [f"{scene}/{difficulty}/data_train.pkl" for difficulty in train_difficulties],
+            "val": [f"{scene}/{difficulty}/data_val.pkl" for difficulty in val_difficulties],
+            "test": [f"{scene}/{difficulty}/data_test.pkl" for difficulty in test_difficulties],
+        }
+        for scene in args.scenes
+    }
     return {
         "protocol": args.protocol,
         "dataset": "TrajImpute",
@@ -128,15 +161,17 @@ def build_manifest(args, protocol_cfg):
             "type": "official_release",
             "root": str(data_root),
             "difficulty": protocol_cfg["difficulty"],
-            "train_difficulties": protocol_cfg.get("train_difficulties", [protocol_cfg["difficulty"]]),
-            "val_difficulties": protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]]),
+            "train_difficulties": train_difficulties,
+            "val_difficulties": val_difficulties,
+            "test_difficulties": test_difficulties,
+            "train_sampling_scheme": protocol_cfg.get("train_sampling_scheme", "natural"),
+            "train_sampling_seed": args.train_sampling_seed,
             "direct_prediction": True,
             "is_trajimpute_clean_split": False,
         },
         "data_root": str(data_root),
         "scenes": args.scenes,
-        "files": {s: [f"{s}/{protocol_cfg['difficulty']}/data_{sp}.pkl"
-                      for sp in ("train", "val", "test")] for s in args.scenes},
+        "files": files,
         "git_revision": get_git_revision(),
         "python": sys.executable,
         "env": env_info(),
@@ -147,6 +182,19 @@ def build_manifest(args, protocol_cfg):
         "epochs": args.epochs,
         "lr": args.lr,
         "weight_decay": args.weight_decay,
+        "train_sampling_scheme": protocol_cfg.get("train_sampling_scheme", "natural"),
+        "train_sampling_seed": args.train_sampling_seed,
+        "sampling_definition": {
+            "natural": "dataset-level Easy+Hard concatenation with shuffle",
+            "severity_balanced": "inverse-frequency weighted sampling over focal missing_count m=0..7",
+            "evidence_balanced": (
+                "inverse-frequency weighted sampling over E0/E1/E2/E3; "
+                "E3: valid_count<=1 or forecast_gap>=4 or max_missing_run>=4; "
+                "E2: valid_count<=3 or anchor_lag>=2 or forecast_gap>=3 or max_missing_run>=3; "
+                "E1: valid_count<=5 or anchor_lag>=1 or forecast_gap>=2 or max_missing_run>=2; "
+                "E0: remaining cases"
+            ),
+        },
         "monitor": f"val_minFDE{args.K}",
         "K": args.K,
         "training_mode": "retrain_missing_data",
@@ -206,6 +254,8 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"difficulty={protocol_cfg['difficulty']}",
         f"train_difficulties={protocol_cfg.get('train_difficulties', [protocol_cfg['difficulty']])}",
         f"val_difficulties={protocol_cfg.get('val_difficulties', [protocol_cfg['difficulty']])}",
+        f"train_sampling_scheme={protocol_cfg.get('train_sampling_scheme', 'natural')}",
+        f"train_sampling_seed={args.train_sampling_seed}",
         f"zero_missing_only={str(protocol_cfg['zero_missing_only']).lower()}",
         f"data_root={args.data_root}",
         f"seed={args.seed}",
@@ -258,26 +308,35 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
             "error": str(error),
         }
 
-    # 评估（独立进程，direct evaluator）
-    eval_cmd = [
-        PY, "-u", str(EVAl_SCRIPT),
-        "--data-root", args.data_root,
-        "--scene", scene,
-        "--difficulty", protocol_cfg["difficulty"],
-        "--split", "test",
-        "--variant", args.variant,
-        "--K", str(args.K),
-        "--seed", str(args.seed),
-        "--checkpoint", str(ckpt),
-        "--output-root", str(run_dir / "eval"),
-        "--bimamba" if args.bimamba else "--no-bimamba",
-    ]
-    if protocol_cfg["zero_missing_only"]:
-        eval_cmd += ["--zero-missing-only"]
-    if args.smoke:
-        eval_cmd += ["--max-batches", str(args.limit_batches)]
-    rc = sh(eval_cmd, log, env=gpu_env)
-    status = "complete" if rc == 0 else "eval_failed"
+    # 评估：同一 checkpoint 分别跑 Easy/Hard，保留跨条件泛化证据。
+    test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
+    evaluations = []
+    for test_difficulty in test_difficulties:
+        eval_cmd = [
+            PY, "-u", str(EVAl_SCRIPT),
+            "--data-root", args.data_root,
+            "--scene", scene,
+            "--difficulty", test_difficulty,
+            "--split", "test",
+            "--variant", args.variant,
+            "--K", str(args.K),
+            "--seed", str(args.seed),
+            "--checkpoint", str(ckpt),
+            "--output-root", str(run_dir / "eval" / test_difficulty),
+            "--bimamba" if args.bimamba else "--no-bimamba",
+        ]
+        if protocol_cfg["zero_missing_only"]:
+            eval_cmd += ["--zero-missing-only"]
+        if args.smoke:
+            eval_cmd += ["--max-batches", str(args.limit_batches)]
+        rc_eval = sh(eval_cmd, log, env=gpu_env)
+        evaluations.append({
+            "difficulty": test_difficulty,
+            "status": "complete" if rc_eval == 0 else "eval_failed",
+            "rc": rc_eval,
+            "output_root": str(run_dir / "eval" / test_difficulty),
+        })
+    status = "complete" if all(item["status"] == "complete" for item in evaluations) else "eval_failed"
     return {
         "scene": scene,
         "status": status,
@@ -287,6 +346,8 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         "best_val": best_val,
         "monitor": f"val_minFDE{args.K}",
         "K": args.K,
+        "test_difficulties": test_difficulties,
+        "evaluations": evaluations,
         "training_mode": "retrain_missing_data",
     }
 
@@ -307,6 +368,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=epochs_default)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--weight-decay", type=float, default=1e-4)
+    ap.add_argument("--train-sampling-seed", type=int, default=None,
+                    help="sampler seed；默认跟随 --seed")
     ap.add_argument("--K", type=int, default=DIRECT_NUM_MODES, choices=[DIRECT_NUM_MODES])
     ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
                     help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
@@ -318,6 +381,8 @@ def main():
                     help="标记为筛选实验（正式非确认性）")
     ap.add_argument("--limit-batches", type=int, default=2, help="smoke 用")
     args = ap.parse_args()
+    if args.train_sampling_seed is None:
+        args.train_sampling_seed = args.seed
 
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajImpute 正式重训协议固定 K=20")

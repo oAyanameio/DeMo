@@ -9,6 +9,8 @@ target:
   difficulty: ${difficulty}
   train_difficulties: ${train_difficulties}
   val_difficulties: ${val_difficulties}
+  train_sampling_scheme: ${train_sampling_scheme}
+  train_sampling_seed: ${train_sampling_seed}
   obs_len: 8
   pred_len: 12
   train_batch_size: ${batch_size}

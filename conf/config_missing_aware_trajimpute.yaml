@@ -16,6 +16,8 @@ scene: ETH-M
 difficulty: Easy
 train_difficulties: [Easy]
 val_difficulties: [Easy]
+train_sampling_scheme: natural
+train_sampling_seed: ${seed}
 monitor: val_minFDE20
 save_top_k: 1
 

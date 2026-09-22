@@ -17,13 +17,14 @@
        由 x_valid_mask 明确区分，占位值不得被误认为真实观测
 """
 
+from collections import Counter
 from pathlib import Path
 import pickle
 
 import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import ConcatDataset, Dataset
+from torch.utils.data import ConcatDataset, Dataset, WeightedRandomSampler
 
 from .missing_features import build_missing_features
 
@@ -33,6 +34,42 @@ SPLITS = ("train", "val", "test")
 REQUIRED_KEYS = ("obs_traj", "pred_traj", "missing_mask", "seq_start_end")
 
 TRAJIMPUTE_ROOT = "/home/lbh/TrajImpute/dataset/TrajImpute"
+
+
+def max_missing_run(hist_valid: torch.Tensor) -> int:
+    """返回最长连续缺失段长度。"""
+    missing = (~hist_valid).tolist()
+    best = current = 0
+    for is_missing in missing:
+        current = current + 1 if is_missing else 0
+        best = max(best, current)
+    return best
+
+
+def classify_evidence_bin(hist_valid: torch.Tensor) -> str:
+    """按预注册的证据覆盖规则分为 E0/E1/E2/E3。
+
+    只使用历史有效性 mask，不读取位置、未来或 scene/test 标签。
+    规则按严重度优先级从 E3 到 E0 判定，保证分箱互斥。
+    """
+    if hist_valid.dim() != 1 or hist_valid.numel() != 8:
+        raise ValueError(f"hist_valid must be [8], got {tuple(hist_valid.shape)}")
+    valid_count = int(hist_valid.sum().item())
+    valid_idx = torch.nonzero(hist_valid).flatten()
+    if valid_idx.numel() == 0:
+        raise ValueError("evidence binning requires at least one valid history frame")
+    last_valid_idx = int(valid_idx[-1].item())
+    anchor_lag = 7 - last_valid_idx
+    forecast_gap = 8 - last_valid_idx
+    max_run = max_missing_run(hist_valid)
+
+    if valid_count <= 1 or forecast_gap >= 4 or max_run >= 4:
+        return "E3"
+    if valid_count <= 3 or anchor_lag >= 2 or forecast_gap >= 3 or max_run >= 3:
+        return "E2"
+    if valid_count <= 5 or anchor_lag >= 1 or forecast_gap >= 2 or max_run >= 2:
+        return "E1"
+    return "E0"
 
 
 # ---------------------------------------------------------------- pkl 读取与校验
@@ -128,9 +165,30 @@ def rebuild_seq_start_end(seq_start_end, n_rows: int, path=None):
     )
 
 
+# ---------------------------------------------------------------- 向量化有效帧索引
+def _prev_valid_index(hist_valid: torch.Tensor) -> torch.Tensor:
+    """prev[t] = 该 actor 在 t 之前（不含 t）最近的有效帧下标；无则 -1。[A, T] long"""
+    A, T = hist_valid.shape
+    j = torch.arange(T, dtype=torch.long).unsqueeze(0).expand(A, T)
+    cand = torch.where(hist_valid, j, torch.full_like(j, -1))
+    cm = torch.cummax(cand, dim=1).values  # 含 t 自身的最近有效帧
+    return torch.cat(
+        [torch.full((A, 1), -1, dtype=torch.long), cm[:, :-1]], dim=1
+    )
+
+
+def _last_valid_indices(hist_valid: torch.Tensor) -> torch.Tensor:
+    """每 actor 最后一个有效帧下标（零有效帧按旧循环版约定返回 0）。[A] long"""
+    A, T = hist_valid.shape
+    j = torch.arange(T, dtype=torch.long).unsqueeze(0).expand(A, T)
+    cand = torch.where(hist_valid, j, torch.full_like(j, -1))
+    return torch.cummax(cand, dim=1).values[:, -1].clamp(min=0)
+
+
 # ---------------------------------------------------------------- 跨缺口运动特征
 def build_gap_aware_motion(hist_pos: torch.Tensor, hist_valid: torch.Tensor):
-    """跨缺口差分/速度（任务书 §七）。
+    """跨缺口差分/速度（任务书 §七）——向量化实现，与逐帧循环版逐位等价
+    （等价性验收：tests/test_trajimpute_vectorization.py + 全量 sweep）。
 
     对每个 actor 的每个有效帧 t：s = t 之前最近的有效帧，
         diff[t] = p[t] - p[s]（未归一化位移，跨缺口）
@@ -145,20 +203,22 @@ def build_gap_aware_motion(hist_pos: torch.Tensor, hist_valid: torch.Tensor):
         diff [A, T, 2], velocity [A, T], velocity_diff [A, T]，全部 finite。
     """
     A, T, _ = hist_pos.shape
-    diff = torch.zeros(A, T, 2, dtype=hist_pos.dtype)
-    velocity = torch.zeros(A, T, dtype=hist_pos.dtype)
-    velocity_diff = torch.zeros(A, T, dtype=hist_pos.dtype)
-    for i in range(A):
-        vidx = torch.nonzero(hist_valid[i]).flatten().tolist()
-        for k in range(1, len(vidx)):
-            t, s = vidx[k], vidx[k - 1]
-            d = hist_pos[i, t] - hist_pos[i, s]
-            gap = t - s
-            diff[i, t] = d
-            velocity[i, t] = torch.norm(d) / gap
-            # 相邻有效帧对之间的有效速度差（k>=2 时 vel[s] 已定义）
-            if k >= 2:
-                velocity_diff[i, t] = velocity[i, t] - velocity[i, s]
+    j = torch.arange(T, dtype=torch.long).unsqueeze(0).expand(A, T)
+    prev = _prev_valid_index(hist_valid)          # [A, T]：t 的前一有效帧（或 -1）
+    has_prev = prev >= 0
+    safe_prev = prev.clamp(min=0)
+    prev_pos = hist_pos.gather(1, safe_prev.unsqueeze(-1).expand(A, T, 2))
+    d = hist_pos - prev_pos                        # 仅在 has_prev 处有意义
+    gap = (j - safe_prev).clamp(min=1)             # 无 prev 处不使用，防除零
+    vel = torch.norm(d, dim=-1) / gap
+    pair = hist_valid & has_prev                   # 有前序有效帧的有效帧
+    zero2 = torch.zeros((), dtype=hist_pos.dtype)
+    diff = torch.where(pair.unsqueeze(-1), d, zero2)
+    velocity = torch.where(pair, vel, zero2)
+    # velocity_diff 仅当 t 的前一有效帧 s 自身还有前序（循环版 k>=2）时定义
+    vel_at_s = velocity.gather(1, safe_prev)       # s 处最终 velocity（s 无前序时为 0）
+    s_has_prev = has_prev.gather(1, safe_prev)
+    velocity_diff = torch.where(pair & s_has_prev, velocity - vel_at_s, zero2)
     return diff, velocity, velocity_diff
 
 
@@ -219,11 +279,8 @@ def build_sample(
     hist_local = torch.nan_to_num(local[:, :obs_len], nan=0.0).float()
     future_local = local[:, obs_len:].float()  # 无 NaN（已校验）
 
-    # 每 actor 最后有效帧 / 锚点间隔（任务书 §八）
-    last_valid_idx = torch.zeros(A, dtype=torch.long)
-    for i in range(A):
-        vi = torch.nonzero(hist_valid[i]).flatten()
-        last_valid_idx[i] = int(vi[-1].item())
+    # 每 actor 最后有效帧 / 锚点间隔（任务书 §八）——向量化（与逐 actor 循环版等价）
+    last_valid_idx = _last_valid_indices(hist_valid)
     x_anchor_lag = (obs_len - 1 - last_valid_idx).clamp(min=0)
     x_forecast_gap = (obs_len - last_valid_idx).clamp(min=1)
 
@@ -235,20 +292,28 @@ def build_sample(
     # x_centers：每 actor 最后有效历史位置（局部系，有限值）
     x_centers = hist_local[torch.arange(A), last_valid_idx].clone()
 
-    # 相邻步角度（兼容字段；无效步为 0）；朝向输入使用 x_last_valid_angle
+    # 相邻步角度（兼容字段；无效步为 0）——向量化（与逐帧循环版等价）；朝向输入使用 x_last_valid_angle
+    d = hist_local[:, 1:] - hist_local[:, :-1]                     # [A, T-1, 2]
+    ang = torch.atan2(d[..., 1], d[..., 0])                        # [A, T-1]
     x_angles = torch.zeros(A, obs_len)
     diff_mask = hist_valid[:, :-1] & hist_valid[:, 1:]
-    for t in range(1, obs_len):
-        d = hist_local[:, t] - hist_local[:, t - 1]
-        ang = torch.atan2(d[:, 1], d[:, 0])
-        x_angles[:, t] = torch.where(diff_mask[:, t - 1], ang, torch.zeros_like(ang))
+    x_angles[:, 1:] = torch.where(diff_mask, ang, torch.zeros_like(ang))
     if obs_len >= 2:
         x_angles[:, 0] = x_angles[:, 1]
-    # 每 actor 最近有效朝向：最后两个有效观测连线（与 focal theta 同规则）
-    x_last_valid_angle = torch.zeros(A)
-    for i in range(A):
-        ang_i, _ = compute_gap_aware_theta(hist_local[i].double(), hist_valid[i])
-        x_last_valid_angle[i] = ang_i
+    # 每 actor 最近有效朝向：最后两个有效观测连线（与 focal theta 同规则）——向量化
+    prev = _prev_valid_index(hist_valid)                           # [A, T]
+    t_last = _last_valid_indices(hist_valid)                       # [A]
+    s_last = prev.gather(1, t_last.unsqueeze(1)).squeeze(1)        # [A]：最后有效帧的前一有效帧
+    arange_A = torch.arange(A)
+    d_last = hist_local.double()[arange_A, t_last] - hist_local.double()[arange_A, s_last.clamp(min=0)]
+    has_two = s_last >= 0                                          # 不足两个有效帧 -> 0
+    # eps 退化检查与 compute_gap_aware_theta 一致：位移范数 < 1e-4 -> 0（float64 判定）
+    not_degenerate = torch.norm(d_last, dim=-1) >= 1e-4
+    ang_last = torch.where(
+        has_two & not_degenerate, torch.atan2(d_last[:, 1], d_last[:, 0]),
+        torch.zeros(A, dtype=torch.float64),
+    ).float()
+    x_last_valid_angle = ang_last
 
     x_attr = torch.zeros(A, 3, dtype=torch.uint8)  # type 0 = pedestrian
 
@@ -339,6 +404,16 @@ class TrajImputeDataset(Dataset):
         self.frame_valid = frame_valid
         self.seq_start_end = seq_start_end
         self.missing_counts = (~frame_valid).sum(dim=1)  # [N]
+        self.valid_counts = frame_valid.sum(dim=1)  # [N]
+        self.last_valid_idx = torch.tensor([
+            int(torch.nonzero(row).flatten()[-1]) for row in frame_valid
+        ], dtype=torch.long)
+        self.anchor_lags = (self.obs_len - 1 - self.last_valid_idx).clamp(min=0)
+        self.forecast_gaps = (self.obs_len - self.last_valid_idx).clamp(min=1)
+        self.max_missing_runs = torch.tensor([
+            max_missing_run(row) for row in frame_valid
+        ], dtype=torch.long)
+        self.evidence_bins = [classify_evidence_bin(row) for row in frame_valid]
 
         # focal 索引表：(seq_index, start, end, focal_global_row)
         self.samples = []
@@ -347,6 +422,12 @@ class TrajImputeDataset(Dataset):
                 if zero_missing_only and int(self.missing_counts[row]) != 0:
                     continue
                 self.samples.append((seq_i, s, e, row))
+        self.sample_missing_counts = [int(self.missing_counts[row]) for _, _, _, row in self.samples]
+        self.sample_evidence_bins = [self.evidence_bins[row] for _, _, _, row in self.samples]
+        self.sample_max_missing_runs = [int(self.max_missing_runs[row]) for _, _, _, row in self.samples]
+        self.sample_valid_counts = [int(self.valid_counts[row]) for _, _, _, row in self.samples]
+        self.sample_anchor_lags = [int(self.anchor_lags[row]) for _, _, _, row in self.samples]
+        self.sample_forecast_gaps = [int(self.forecast_gaps[row]) for _, _, _, row in self.samples]
         print(
             f"TrajImputeDataset {scene}/{difficulty}/{split}: "
             f"{len(self.samples)} focal samples from {len(seq_start_end)} sequences "
@@ -436,6 +517,8 @@ class TrajImputeDataModule(LightningDataModule):
         pin_memory: bool = True,
         test: bool = False,
         zero_missing_only: bool = False,
+        train_sampling_scheme: str = "natural",
+        train_sampling_seed: int = 2024,
     ):
         super().__init__()
         self.data_root = data_root
@@ -452,6 +535,16 @@ class TrajImputeDataModule(LightningDataModule):
         self.pin_memory = pin_memory
         self.test = test
         self.zero_missing_only = zero_missing_only
+        allowed = {"natural", "severity_balanced", "evidence_balanced"}
+        if train_sampling_scheme not in allowed:
+            raise ValueError(
+                f"unknown train_sampling_scheme={train_sampling_scheme!r}; "
+                f"expected one of {sorted(allowed)}"
+            )
+        if test and train_sampling_scheme != "natural":
+            raise ValueError("train_sampling_scheme must be natural when test=True")
+        self.train_sampling_scheme = train_sampling_scheme
+        self.train_sampling_seed = int(train_sampling_seed)
 
     def _dataset(self, split: str):
         return TrajImputeDataset(
@@ -469,6 +562,41 @@ class TrajImputeDataModule(LightningDataModule):
         return [self._dataset_for_difficulty(split, difficulty)
                 for difficulty in difficulties]
 
+    def _build_train_sampler(self):
+        """Construct a fixed-seed weighted sampler over the training dataset.
+
+        For ConcatDataset, weights are concatenated in the same order as datasets.
+        The sampler is only used for training; validation/test retain natural order.
+        """
+        if self.train_sampling_scheme == "natural":
+            return None
+        datasets = list(self.train_dataset.datasets) if isinstance(self.train_dataset, ConcatDataset) else [self.train_dataset]
+        weights = []
+        labels = []
+        for ds in datasets:
+            if self.train_sampling_scheme == "severity_balanced":
+                labels.extend(ds.sample_missing_counts)
+            else:
+                labels.extend(ds.sample_evidence_bins)
+        counts = Counter(labels)
+        if len(counts) < 2:
+            raise ValueError(
+                f"{self.train_sampling_scheme} requires at least 2 populated bins, got {counts}"
+            )
+        weights = [1.0 / counts[label] for label in labels]
+        print(
+            f"TrajImpute sampler={self.train_sampling_scheme} seed={self.train_sampling_seed} "
+            f"bins={dict(sorted(counts.items(), key=lambda item: str(item[0])))}",
+            flush=True,
+        )
+        generator = torch.Generator().manual_seed(self.train_sampling_seed)
+        return WeightedRandomSampler(
+            weights=torch.as_tensor(weights, dtype=torch.double),
+            num_samples=len(labels),
+            replacement=True,
+            generator=generator,
+        )
+
     def setup(self, stage=None):
         if self.test:
             self.test_dataset = self._dataset("test")
@@ -480,25 +608,44 @@ class TrajImputeDataModule(LightningDataModule):
             self.val_dataset = (val_sets[0] if len(val_sets) == 1
                                 else ConcatDataset(val_sets))
 
+    def _dataloader_kwargs(self):
+        """Shared loader options; prefetching is valid only with worker processes."""
+        kwargs = {
+            "num_workers": self.num_workers,
+            "pin_memory": self.pin_memory,
+            "collate_fn": trajimpute_collate_fn,
+        }
+        if self.num_workers > 0:
+            kwargs.update(
+                persistent_workers=True,
+                prefetch_factor=2,
+            )
+        return kwargs
+
     def train_dataloader(self):
+        sampler = self._build_train_sampler()
         return DataLoader(
-            self.train_dataset, batch_size=self.train_batch_size, shuffle=True,
-            num_workers=self.num_workers, pin_memory=self.pin_memory,
-            collate_fn=trajimpute_collate_fn,
+            self.train_dataset,
+            batch_size=self.train_batch_size,
+            shuffle=sampler is None,
+            sampler=sampler,
+            **self._dataloader_kwargs(),
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.val_dataset, batch_size=self.val_batch_size, shuffle=False,
-            num_workers=self.num_workers, pin_memory=self.pin_memory,
-            collate_fn=trajimpute_collate_fn,
+            self.val_dataset,
+            batch_size=self.val_batch_size,
+            shuffle=False,
+            **self._dataloader_kwargs(),
         )
 
     def test_dataloader(self):
         return DataLoader(
-            self.test_dataset, batch_size=self.test_batch_size, shuffle=False,
-            num_workers=self.num_workers, pin_memory=self.pin_memory,
-            collate_fn=trajimpute_collate_fn,
+            self.test_dataset,
+            batch_size=self.test_batch_size,
+            shuffle=False,
+            **self._dataloader_kwargs(),
         )
 
 
