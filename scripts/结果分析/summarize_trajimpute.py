@@ -1,10 +1,10 @@
-"""TrajImpute P0/P0.5 结果汇总。
+"""TrajGap-Bench Mixed 结果汇总。
 
-扫描 outputs/trajimpute_direct/<variant>_<scene>_<protocol>_seed<seed>/eval/*/results.json，
+扫描 TrajGap-Bench 输出根目录下的 Mixed results.json，
 按 scene/seed/variant 聚合 minFDE20 等指标，输出：
   summary.json / summary.csv / comparison.md（含配对差值）
 
-不把 Clean-direct 与 Easy-direct、不同 seed、非配对版本混合平均。
+只纳入 `mixed-direct` 和 K=20；历史 Easy/Hard 子集结果不会进入正式汇总。
 """
 
 import argparse
@@ -19,19 +19,13 @@ FORMAL_K = 20
 
 
 def protocol_label(manifest, meta):
-    """遗留 Easy 零缺失子集不能作为 Clean-direct 汇总。"""
-    clean_source = manifest.get("clean_source", {})
-    if isinstance(clean_source, dict) and \
-            clean_source.get("type") == "easy_zero_missing_subset":
-        return "easy-zero-missing-diagnostic"
-    if meta.get("zero_missing_only"):
-        return "easy-zero-missing-diagnostic"
+    """Return the formal benchmark protocol label."""
     return manifest.get("protocol", "?")
 
 
 def collect(root: Path):
     rows = []
-    for res_file in sorted(root.glob("*/eval/*/results.json")):
+    for res_file in sorted(root.rglob("results.json")):
         payload = json.loads(res_file.read_text())
         meta = payload["meta"]
         ov = payload["results"]["overall"]
@@ -44,7 +38,7 @@ def collect(root: Path):
             "protocol": protocol_label(manifest, meta),
             "seed": meta["seed"],
             "K": meta["K"],
-            "backbone": manifest.get("backbone", {}).get("bimamba", True),
+            "backbone": manifest.get("backbone", {}).get("bimamba", False),
             "n": ov.get("n"),
             "ckpt": meta.get("checkpoint", {}).get("path") if isinstance(meta.get("checkpoint"), dict) else None,
             "run_dir": str(run_dir),
@@ -104,20 +98,23 @@ def paired_diff(rows, base_variant, comp_variant, protocol, seed, backbone=True)
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default="outputs/trajimpute_retrain")
+    ap.add_argument("--root", default="outputs/trajgap_bench")
     args = ap.parse_args()
     root = Path(args.root)
     all_rows = collect(root)
-    rows = [row for row in all_rows if row["K"] == FORMAL_K]
+    rows = [row for row in all_rows
+            if row["K"] == FORMAL_K and row["protocol"] == "mixed-direct"]
     excluded = [
         {
             "run_dir": row["run_dir"],
             "K": row["K"],
             "protocol": row["protocol"],
-            "reason": f"formal TrajImpute summary requires K={FORMAL_K}",
+            "reason": (
+                f"TrajGap-Bench formal summary requires protocol=mixed-direct and K={FORMAL_K}"
+            ),
         }
         for row in all_rows
-        if row["K"] != FORMAL_K
+        if row["K"] != FORMAL_K or row["protocol"] != "mixed-direct"
     ]
     if not rows:
         if excluded:
@@ -146,9 +143,9 @@ def main():
         w.writerows(rows)
 
     # comparison.md：配对比较 + 聚合表
-    md = ["# TrajImpute 选题模型重训结果汇总\n"]
+    md = ["# TrajGap-Bench Mixed 模型重训结果汇总\n"]
     md.append("数据来源：`" + str(root) + "`；训练与评估均为 direct 重训，K=20；")
-    md.append("MR=全部 K 模态终点误差>2.0。Easy 零缺失子集仅作诊断，不是 Clean-direct。\n")
+    md.append("训练、验证和测试均为 TrajGap Mixed；MR=全部 K 模态终点误差>2.0。\n")
 
     md.append("## 各版本×场景×seed 明细\n")
     md.append("| variant | scene | protocol | seed | n | minADE20 | minFDE20 | ADE@1 | FDE@1 | MR |")
@@ -159,11 +156,12 @@ def main():
             f"| {r['minADE_K']:.4f} | {r['minFDE_K']:.4f} | {r['ADE@1']:.4f} "
             f"| {r['FDE@1']:.4f} | {r['MR']:.4f} |")
 
-    # 配对差（E1 vs M0；同 protocol/seed/backbone）
+    # 对每个候选 variant 与 M0 做同协议配对差。
     seeds = sorted({r["seed"] for r in rows})
     for seed in seeds:
         for proto in sorted({r["protocol"] for r in rows}):
-            for comp in ("E1-gap-scaling",):
+            variants = sorted({r["variant"] for r in rows if r["variant"] != "M0"})
+            for comp in variants:
                 diffs = paired_diff(rows, "M0", comp, proto, seed)
                 if not diffs:
                     continue

@@ -1,16 +1,12 @@
-"""TrajImpute 直接缺失预测评估脚本。
+"""TrajGap-Bench Mixed 直接缺失预测评估入口。
 
-用法（两类）：
-  1) checkpoint 评估：
-     PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
-         --checkpoint outputs/.../checkpoints/xxx.ckpt \
-         --scene ETH-M --difficulty Easy --split test --K 20 --variant M0_base
-  2) 未训练模型冒烟（验证数据管线与评估器本身，结果无意义）：
-     PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
-         --scene ETH-M --difficulty Easy --split test --K 20 --variant M0_base --untrained
+正式协议固定为 `--difficulty Mixed`：
+  PYTHONPATH=. python scripts/结果分析/evaluate_trajimpute_direct.py \
+      --checkpoint outputs/.../checkpoints/xxx.ckpt \
+      --scene ETH-M --difficulty Mixed --split test --K 20 --variant M0
 
-输出：outputs/trajimpute_direct/<scene>_<difficulty>_<split>_<variant>_seed<seed>/results.json
-层级：scene/difficulty/split/missing_count/variant/seed；K 显式写入 meta；
+输出：outputs/trajgap_bench/<scene>_Mixed_<split>_<variant>_seed<seed>/results.json
+层级：scene/split/missing_count/variant/seed；K 显式写入 meta；
 外部参考数字（TrajImpute 原论文）只能以 external_reference 单独存放，不混入。
 """
 
@@ -133,7 +129,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-root", default="/home/lbh/TrajImpute/dataset/TrajImpute")
     ap.add_argument("--scene", required=True)
-    ap.add_argument("--difficulty", default="Mixed", choices=["Mixed", "Easy", "Hard"])
+    ap.add_argument("--difficulty", default="Mixed", choices=["Mixed"],
+                    help="TrajGap-Bench 正式主协议固定为 Mixed")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
     ap.add_argument("--variant", default="M0", choices=list(VARIANTS))
     ap.add_argument("--K", type=int, default=20)
@@ -144,9 +141,9 @@ def main():
     ap.add_argument("--untrained", action="store_true",
                     help="未训练模型冒烟（结果无意义，仅验证管线）")
     ap.add_argument("--zero-missing-only", action="store_true",
-                    help="诊断用途：只评估 Easy 中 focal missing_count==0 的样本；不是 Clean-direct")
+                    help="已废弃：TrajGap Mixed 主协议不允许子集筛选")
     ap.add_argument("--max-batches", type=int, default=None)
-    ap.add_argument("--output-root", default="outputs/trajimpute_retrain")
+    ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
                     help="主链固定单向(2026-09-12裁定)；须与训练时一致")
@@ -157,7 +154,7 @@ def main():
     args = ap.parse_args()
 
     if args.K != 20:
-        raise SystemExit("TrajImpute direct 正式评估固定 K=20")
+        raise SystemExit("TrajGap-Bench Mixed direct 正式评估固定 K=20")
 
     torch.manual_seed(args.seed)
     if args.difficulty == MIXED_DIFFICULTY:
@@ -169,7 +166,7 @@ def main():
             args.data_root, args.scene, args.difficulty, args.split,
             zero_missing_only=args.zero_missing_only,
         )
-    # 被 zero_missing_only 过滤掉的样本数（Clean-direct 边界记录）
+    # Mixed 主协议不做子集过滤；保留总行数用于完整性审计。
     n_total_rows = int(dataset.missing_counts.shape[0])
     n_kept_focal = len(dataset)
     n_filtered_out = n_total_rows - n_kept_focal if args.zero_missing_only else 0
@@ -210,7 +207,7 @@ def main():
         "evidence_state_mode": args.evidence_state_mode or VARIANTS[args.variant]["evidence_state_mode"],
         "seed": args.seed,
         "K": args.K,
-        "evaluator": "src/evaluation/trajimpute_direct.py (direct, no imputation)",
+        "evaluator": "src/evaluation/trajimpute_direct.py (TrajGap Mixed direct, no imputation)",
         "git_revision": get_git_revision(),
         "untrained_smoke": bool(args.untrained),
         "checkpoint": ckpt_info,
@@ -221,18 +218,8 @@ def main():
             "MR": f"miss if ALL K modes' final displacement > {2.0}",
         },
         "external_reference": None,
-        "release_subset": (
-            {
-                "type": "easy_zero_missing_diagnostic",
-                "test": {"source": f"Easy/data_test.pkl",
-                         "filter": "focal missing_count == 0"},
-                "is_clean_direct": False,
-            } if args.zero_missing_only else inspect_clean_source(args.data_root)
-        ),
-        "protocol": (
-            "easy-zero-missing-diagnostic"
-            if args.zero_missing_only else f"{args.difficulty.lower()}-direct"
-        ),
+        "release_subset": inspect_clean_source(args.data_root),
+        "protocol": "mixed-direct",
         "zero_missing_only": bool(args.zero_missing_only),
         "n_samples_kept": n_kept_focal,
         "n_samples_total_rows": n_total_rows,

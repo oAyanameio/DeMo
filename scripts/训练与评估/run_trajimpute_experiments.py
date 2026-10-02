@@ -11,9 +11,9 @@
 
 用法：
   PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_experiments.py \
-      --protocol easy-direct --variant M0 \
+      --protocol mixed-direct --variant M0 \
       --scenes ETH-M HOTEL-M UNIV-M ZARA1-M ZARA2-M \
-      --seed 2024 --gpu 3 --output-root outputs/clean_ethucy
+      --seed 2024 --gpu 3 --output-root outputs/trajgap_bench
 """
 
 import argparse
@@ -47,18 +47,6 @@ VARIANTS = {
 }
 
 PROTOCOLS = {
-    "easy-direct": {
-        "dataset": "trajimpute",
-        "difficulty": "Easy",
-        "zero_missing_only": False,
-        "suffix": "",
-    },
-    "hard-direct": {
-        "dataset": "trajimpute",
-        "difficulty": "Hard",
-        "zero_missing_only": False,
-        "suffix": "",
-    },
     "mixed-direct": {
         "dataset": "trajgap",
         "difficulty": "Mixed",
@@ -68,26 +56,6 @@ PROTOCOLS = {
         "train_sampling_scheme": "natural",
         "zero_missing_only": False,
         "suffix": "_trajgap",
-    },
-    "severity-balanced": {
-        "dataset": "trajimpute",
-        "difficulty": "Hard",
-        "train_difficulties": ["Easy", "Hard"],
-        "val_difficulties": ["Easy", "Hard"],
-        "test_difficulties": ["Easy", "Hard"],
-        "train_sampling_scheme": "severity_balanced",
-        "zero_missing_only": False,
-        "suffix": "_severity_balanced",
-    },
-    "evidence-balanced": {
-        "dataset": "trajimpute",
-        "difficulty": "Hard",
-        "train_difficulties": ["Easy", "Hard"],
-        "val_difficulties": ["Easy", "Hard"],
-        "test_difficulties": ["Easy", "Hard"],
-        "train_sampling_scheme": "evidence_balanced",
-        "zero_missing_only": False,
-        "suffix": "_evidence_balanced",
     },
 }
 
@@ -206,15 +174,7 @@ def build_manifest(args, protocol_cfg):
         "train_sampling_scheme": protocol_cfg.get("train_sampling_scheme", "natural"),
         "train_sampling_seed": args.train_sampling_seed,
         "sampling_definition": {
-            "natural": "dataset-level Easy+Hard concatenation with shuffle",
-            "severity_balanced": "inverse-frequency weighted sampling over focal missing_count m=0..7",
-            "evidence_balanced": (
-                "inverse-frequency weighted sampling over E0/E1/E2/E3; "
-                "E3: valid_count<=1 or forecast_gap>=4 or max_missing_run>=4; "
-                "E2: valid_count<=3 or anchor_lag>=2 or forecast_gap>=3 or max_missing_run>=3; "
-                "E1: valid_count<=5 or anchor_lag>=1 or forecast_gap>=2 or max_missing_run>=2; "
-                "E0: remaining cases"
-            ),
+            "natural": "TrajGap Mixed train dataset with official Easy/Hard source samples concatenated and shuffled",
         },
         "monitor": f"val_minFDE{args.K}",
         "K": args.K,
@@ -242,8 +202,8 @@ def sh(cmd, log_path, env=None):
 
 
 def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
-    if protocol_cfg["dataset"] not in {"trajimpute", "trajgap"}:
-        raise ValueError("run_one_scene 只接受 TrajImpute/TrajGap protocol")
+    if protocol_cfg["dataset"] != "trajgap":
+        raise ValueError("run_one_scene 只接受 TrajGap protocol")
     sw = VARIANTS[args.variant]
     tag = f"{args.variant}_{scene}_{args.protocol}_seed{args.seed}"
     if args.bimamba is False:
@@ -398,7 +358,7 @@ def main():
     ap.add_argument("--K", type=int, default=DIRECT_NUM_MODES, choices=[DIRECT_NUM_MODES])
     ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
                     help="主链固定单向(2026-09-12裁定)；旗标仅作用于encoder")
-    ap.add_argument("--output-root", default="outputs/trajimpute_retrain")
+    ap.add_argument("--output-root", default="outputs/trajgap_bench")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--max-train-retries", type=int, default=6,
                     help="训练被杀后自动断点续训的最大重试次数")
@@ -410,14 +370,18 @@ def main():
         args.train_sampling_seed = args.seed
 
     if args.K != DIRECT_NUM_MODES:
-        raise SystemExit("TrajImpute 正式重训协议固定 K=20")
+        raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
     args.model_version_num = {"M0": "0", "C1-A": "C1A", "C2": "C2", "C3": "C3", "C4": "C4"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
-    if protocol_cfg["dataset"] == "trajimpute" and protocol_cfg["zero_missing_only"]:
-        raise SystemExit("正式 TrajImpute 重训禁止 zero_missing_only")
+    if args.protocol != "mixed-direct":
+        raise SystemExit("正式实验只允许 TrajGap-Bench mixed-direct")
+    if protocol_cfg["dataset"] != "trajgap":
+        raise SystemExit("正式实验必须使用 TrajGap 数据适配器")
+    if protocol_cfg["zero_missing_only"]:
+        raise SystemExit("TrajGap-Bench 正式重训禁止 zero_missing_only")
     args.data_root = str(Path(args.data_root).expanduser().resolve())
 
     gpu_env = dict(os.environ)

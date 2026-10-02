@@ -1,8 +1,8 @@
-"""等 5 个 Clean fold 训练全部完成后，自动对每场景 Easy/Hard test 跑零样本评估。
+"""等 5 个 Clean fold 训练全部完成后，自动对每场景 TrajGap Mixed-test 跑零样本评估。
 
 用法: python -u scripts/训练与评估/watch_clean_then_zero_shot.py
 逻辑: 每 5 分钟检查一次各 fold 是否到 epoch 100；全完成后按 val_minFDE20 选点，
-      逐场景逐难度调用 evaluate_trajimpute_direct.py，结果写入各 fold 的 eval_zero_shot/。
+      逐场景调用 Mixed evaluator，结果写入各 fold 的 eval_zero_shot/Mixed/。
 """
 import csv
 import glob
@@ -60,18 +60,18 @@ def all_done() -> bool:
     return all(current_epoch(f) >= 100 for f in FOLDS)
 
 
-def run_eval(scene: str, difficulty: str, ckpt: Path, out_root: Path):
+def run_eval(scene: str, ckpt: Path, out_root: Path):
     cmd = [
         PY, "-u", str(EVAL),
         "--data-root", DATA_ROOT,
         "--scene", scene,
-        "--difficulty", difficulty,
+        "--difficulty", "Mixed",
         "--split", "test",
         "--variant", "M0",
         "--K", "20",
         "--seed", "2024",
         "--checkpoint", str(ckpt),
-        "--output-root", str(out_root),
+        "--output-root", str(out_root / "Mixed"),
         "--no-bimamba",
     ]
     print(f"[eval] {' '.join(cmd)}", flush=True)
@@ -92,10 +92,9 @@ def main():
         epoch, val, ckpt = select_best_ckpt(fold)
         print(f"[watch] {scene}: best_epoch={epoch} val={val:.4f} ckpt={ckpt}", flush=True)
         out_root = fold_dir(fold) / "eval_zero_shot"
-        for difficulty in ("Easy", "Hard"):
-            rc = run_eval(scene, difficulty, ckpt, out_root)
-            print(f"[watch] {scene} {difficulty} rc={rc}", flush=True)
-            rc_all |= rc
+        rc = run_eval(scene, ckpt, out_root)
+        print(f"[watch] {scene} Mixed rc={rc}", flush=True)
+        rc_all |= rc
     print(f"[watch] 全部完成，总 rc={rc_all}", flush=True)
     return rc_all
 

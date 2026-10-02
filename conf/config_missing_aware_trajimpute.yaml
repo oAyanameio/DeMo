@@ -24,8 +24,8 @@ monitor: val_minFDE20
 save_top_k: 1
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute
-# 仅用于 TrajImpute Easy/Hard direct；zero_missing_only 只允许诊断运行。
-# 正式 Clean-direct 使用 config_missing_aware_ethucy + ETHUCY_benchmark_v1。
+# TrajGap-Bench 正式主协议：所有训练、验证和测试均使用 Mixed。
+# zero_missing_only 仅保留为底层数据诊断开关，不属于正式 benchmark。
 zero_missing_only: false
 checkpoint:
 pretrained_weights:
