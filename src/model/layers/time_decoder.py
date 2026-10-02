@@ -71,9 +71,12 @@ class GMMPredictor(nn.Module):
     
 
 class TimeDecoder(nn.Module):
-    def __init__(self, future_len=60, dim=128, num_modes=20):
+    def __init__(self, future_len=60, dim=128, num_modes=20,
+                 evidence_conditioning: bool = False):
         super(TimeDecoder, self).__init__()
         self.num_modes = num_modes
+        self.dim = dim
+        self.evidence_conditioning = bool(evidence_conditioning)
 
         ###### State Consistency Module ######
         # state cross attention
@@ -168,7 +171,18 @@ class TimeDecoder(nn.Module):
         # MLP for final output
         self.predictor_dense = GMMPredictor_dense(future_len)
 
-    def forward(self, mode, encoding, mask=None):
+    def build_evidence_conditioning(self):
+        """Create the evidence adapter after weight init inside the protected
+        RNG block so paired baseline construction stays bit-identical."""
+        if not self.evidence_conditioning:
+            raise RuntimeError("evidence conditioning is disabled")
+        self.evidence_query = nn.Sequential(
+            nn.Linear(4, 32), nn.GELU(), nn.Linear(32, self.dim)
+        )
+        nn.init.zeros_(self.evidence_query[-1].weight)
+        nn.init.zeros_(self.evidence_query[-1].bias)
+
+    def forward(self, mode, encoding, mask=None, evidence=None):
         # Dynamic state consistency
         for blk in self.cross_block_time:
             mode = blk(mode, encoding, key_padding_mask=mask)
@@ -195,6 +209,12 @@ class TimeDecoder(nn.Module):
         multi_modal_query = self.multi_modal_query_embedding(self.modal)
         mode_query = encoding[:, 0]
         mode = mode_query[:, None] + multi_modal_query
+        if self.evidence_conditioning:
+            if evidence is None:
+                raise ValueError("evidence-conditioned decoder requires evidence")
+            if not hasattr(self, "evidence_query"):
+                raise RuntimeError("evidence conditioning module was never built")
+            mode = mode + self.evidence_query(evidence)[:, None, :]
 
         for blk in self.cross_block_mode:
             mode = blk(mode, encoding, key_padding_mask=mask)

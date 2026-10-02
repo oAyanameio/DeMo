@@ -30,6 +30,7 @@ from .missing_features import build_missing_features
 
 SCENES = ("ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M")
 DIFFICULTIES = ("Easy", "Hard")
+MIXED_DIFFICULTY = "Mixed"
 SPLITS = ("train", "val", "test")
 REQUIRED_KEYS = ("obs_traj", "pred_traj", "missing_mask", "seq_start_end")
 
@@ -459,6 +460,93 @@ class TrajImputeDataset(Dataset):
         return sample
 
 
+class TrajGapDataset(Dataset):
+    """TrajGap：把官方 Easy/Hard 的同一 split 合并为一个数据集。
+
+    Easy/Hard 只作为底层 release 文件来源，公开协议层统一暴露为
+    ``Mixed``。训练、验证和测试都使用同一合并规则；不重新切窗、不生成
+    新的未来目标。底层来源标签仅保留在内部，便于审计样本规模。
+    """
+
+    def __init__(self, data_root: str, scene: str, split: str,
+                 obs_len: int = 8, pred_len: int = 12,
+                 zero_missing_only: bool = False):
+        if split not in SPLITS:
+            raise ValueError(f"unknown split {split!r}, expected one of {SPLITS}")
+        self.scene = scene
+        self.difficulty = MIXED_DIFFICULTY
+        self.split = split
+        self.source_difficulties = ("Easy", "Hard")
+        self.datasets = [
+            TrajImputeDataset(
+                data_root, scene, difficulty, split,
+                obs_len, pred_len, zero_missing_only=zero_missing_only,
+            )
+            for difficulty in self.source_difficulties
+        ]
+        self.cumulative_sizes = []
+        total = 0
+        for dataset in self.datasets:
+            total += len(dataset)
+            self.cumulative_sizes.append(total)
+        self.missing_counts = torch.cat([
+            dataset.missing_counts[torch.tensor(
+                [row for _, _, _, row in dataset.samples], dtype=torch.long
+            )]
+            for dataset in self.datasets
+        ])
+        self.sample_missing_counts = [
+            int(value) for dataset in self.datasets
+            for value in dataset.sample_missing_counts
+        ]
+        self.sample_evidence_bins = [
+            value for dataset in self.datasets
+            for value in dataset.sample_evidence_bins
+        ]
+        self.sample_valid_counts = [
+            value for dataset in self.datasets
+            for value in dataset.sample_valid_counts
+        ]
+        self.sample_anchor_lags = [
+            value for dataset in self.datasets
+            for value in dataset.sample_anchor_lags
+        ]
+        self.sample_forecast_gaps = [
+            value for dataset in self.datasets
+            for value in dataset.sample_forecast_gaps
+        ]
+        self.sample_max_missing_runs = [
+            value for dataset in self.datasets
+            for value in dataset.sample_max_missing_runs
+        ]
+        print(
+            f"TrajGapDataset {scene}/{split}: {len(self)} focal samples "
+            f"from Easy+Hard official release"
+        )
+
+    def __len__(self):
+        return self.cumulative_sizes[-1]
+
+    def _locate(self, index: int):
+        if index < 0:
+            index += len(self)
+        if index < 0 or index >= len(self):
+            raise IndexError(index)
+        dataset_index = 0
+        while index >= self.cumulative_sizes[dataset_index]:
+            dataset_index += 1
+        previous = 0 if dataset_index == 0 else self.cumulative_sizes[dataset_index - 1]
+        return dataset_index, index - previous
+
+    def __getitem__(self, index: int):
+        dataset_index, local_index = self._locate(index)
+        sample = dict(self.datasets[dataset_index][local_index])
+        source_scene_id = sample["scene_id"]
+        source_seq = source_scene_id.rsplit("-seq_", 1)[-1]
+        sample["scene_id"] = f"{self.scene}-Mixed-{self.split}-seq_{dataset_index}_{source_seq}"
+        return sample
+
+
 def trajimpute_collate_fn(batch):
     """TrajImpute collate：含 E1 缺失距离字段。"""
     data = {}
@@ -547,12 +635,15 @@ class TrajImputeDataModule(LightningDataModule):
         self.train_sampling_seed = int(train_sampling_seed)
 
     def _dataset(self, split: str):
-        return TrajImputeDataset(
-            self.data_root, self.scene, self.difficulty, split,
-            self.obs_len, self.pred_len, zero_missing_only=self.zero_missing_only,
-        )
+        return self._dataset_for_difficulty(split, self.difficulty)
 
     def _dataset_for_difficulty(self, split: str, difficulty: str):
+        if difficulty == MIXED_DIFFICULTY:
+            return TrajGapDataset(
+                self.data_root, self.scene, split,
+                self.obs_len, self.pred_len,
+                zero_missing_only=self.zero_missing_only,
+            )
         return TrajImputeDataset(
             self.data_root, self.scene, difficulty, split,
             self.obs_len, self.pred_len, zero_missing_only=self.zero_missing_only,

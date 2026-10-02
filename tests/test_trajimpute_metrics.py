@@ -82,6 +82,24 @@ def test_evaluator_grouping_manual():
     assert out["aggregation"] == "micro-average over all focal samples"
 
 
+def test_evaluator_evidence_dimension_grouping_manual():
+    ev = DirectEvaluator()
+    target = torch.zeros(1, 4, 2)
+    pred = torch.zeros(1, 2, 4, 2)
+    prob = torch.ones(1, 2)
+    ev.update(
+        pred, prob, target, "ETH-M", "Hard", "test", 6,
+        valid_count=2, anchor_lag=3, forecast_gap=4,
+    )
+    out = ev.compute()
+    dims = out["by_dimension"]
+    assert dims["missing_count"]["6"]["n"] == 1
+    assert dims["valid_count"]["2"]["n"] == 1
+    assert dims["anchor_lag"]["3"]["n"] == 1
+    assert dims["forecast_gap"]["4"]["n"] == 1
+    assert dims["terminal_missing"]["true"]["n"] == 1
+
+
 # ---------------------------------------------------------------- 17/18. Easy/Hard 分组统计
 @needs_release
 def test_easy_test_missing_count_groups_0_to_4():

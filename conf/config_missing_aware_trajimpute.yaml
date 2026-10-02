@@ -1,7 +1,9 @@
-# TrajImpute 直接缺失预测最小配置（M0 默认；M1/M2 经 override 开启）。
-# 用法（单场景 smoke）：
+# TrajGap-Bench 统一 Mixed 配置。
+# Easy/Hard 只作为底层官方文件来源，训练、验证和测试均由 TrajGap 合并。
+# 用法（单场景 Mixed smoke）：
 #   PYTHONPATH=. python train.py --config-name=config_missing_aware_trajimpute \
-#     scene=ETH-M difficulty=Easy hydra.run.dir=outputs/trajimpute_smoke/M0_Easy
+#     scene=ETH-M difficulty=Mixed train_difficulties=[Mixed] val_difficulties=[Mixed] \
+#     hydra.run.dir=outputs/trajgap_smoke/M0_ETH-M
 defaults:
   - datamodule: trajimpute
   - model: missing_aware_ethucy_model_forecast
@@ -13,9 +15,9 @@ hydra:
 
 seed: 2024
 scene: ETH-M
-difficulty: Easy
-train_difficulties: [Easy]
-val_difficulties: [Easy]
+difficulty: Mixed
+train_difficulties: [Mixed]
+val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
 monitor: val_minFDE20
@@ -27,7 +29,7 @@ data_root: /home/lbh/TrajImpute/dataset/TrajImpute
 zero_missing_only: false
 checkpoint:
 pretrained_weights:
-output: trajimpute_${model_version}_${scene}_${difficulty}${clean_suffix}
+output: trajgap_${model_version}_${scene}_${difficulty}${clean_suffix}
 clean_suffix: ''
 
 # trainer

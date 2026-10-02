@@ -1,8 +1,8 @@
-"""TrajImpute 缺失数据重训入口（Easy-direct / Hard-direct）。
+"""TrajGap 缺失数据重训入口（统一 Mixed direct 协议）。
 
 协议（任务书 2026-09-07 + 方案 §1.4）：
-- 默认从 `M0 + Easy-direct` 开始；
-- `Easy-direct` / `Hard-direct` 均使用 TrajImpute 官方缺失 train/val/test；
+- 默认从 `M0 + mixed-direct` 开始；
+- `mixed-direct` 将官方 Easy/Hard 的同一 split 合并为单一 Mixed 数据集；
 - 每个场景从头训练，不使用零样本 checkpoint；
 - 训练输出、验证选点和测试评估统一使用 K=20；
 - 每个实验写入独立 manifest，拒绝把不同数据源混为同一协议；
@@ -34,12 +34,16 @@ EVAl_SCRIPT = REPO / "scripts/结果分析/evaluate_trajimpute_direct.py"
 SCENES = ["ETH-M", "HOTEL-M", "UNIV-M", "ZARA1-M", "ZARA2-M"]
 FOLDS = ["ETH", "HOTEL", "UNIV", "ZARA1", "ZARA2"]
 DIRECT_NUM_MODES = 20
-DEFAULT_PROTOCOL = "easy-direct"
+DEFAULT_PROTOCOL = "mixed-direct"
 DEFAULT_VARIANT = "M0"
 
 # variant -> 模型开关（唯一事实来源）
 VARIANTS = {
-    "M0": {},
+    "M0": {"readout_mode": "last", "evidence_state_mode": "none"},
+    "C1-A": {"readout_mode": "last_valid", "evidence_state_mode": "none"},
+    "C2": {"readout_mode": "last", "evidence_state_mode": "gap_control"},
+    "C3": {"readout_mode": "last", "evidence_state_mode": "observed_write_gap"},
+    "C4": {"readout_mode": "last", "evidence_state_mode": "integrated"},
 }
 
 PROTOCOLS = {
@@ -56,14 +60,14 @@ PROTOCOLS = {
         "suffix": "",
     },
     "mixed-direct": {
-        "dataset": "trajimpute",
-        "difficulty": "Hard",
-        "train_difficulties": ["Easy", "Hard"],
-        "val_difficulties": ["Easy", "Hard"],
-        "test_difficulties": ["Easy", "Hard"],
+        "dataset": "trajgap",
+        "difficulty": "Mixed",
+        "train_difficulties": ["Mixed"],
+        "val_difficulties": ["Mixed"],
+        "test_difficulties": ["Mixed"],
         "train_sampling_scheme": "natural",
         "zero_missing_only": False,
-        "suffix": "_mixed",
+        "suffix": "_trajgap",
     },
     "severity-balanced": {
         "dataset": "trajimpute",
@@ -146,17 +150,28 @@ def build_manifest(args, protocol_cfg):
     train_difficulties = protocol_cfg.get("train_difficulties", [protocol_cfg["difficulty"]])
     val_difficulties = protocol_cfg.get("val_difficulties", [protocol_cfg["difficulty"]])
     test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
+    def source_files(scene_name, split, difficulty):
+        if difficulty == "Mixed":
+            return [
+                f"{scene_name}/Easy/data_{split}.pkl",
+                f"{scene_name}/Hard/data_{split}.pkl",
+            ]
+        return [f"{scene_name}/{difficulty}/data_{split}.pkl"]
+
     files = {
         scene: {
-            "train": [f"{scene}/{difficulty}/data_train.pkl" for difficulty in train_difficulties],
-            "val": [f"{scene}/{difficulty}/data_val.pkl" for difficulty in val_difficulties],
-            "test": [f"{scene}/{difficulty}/data_test.pkl" for difficulty in test_difficulties],
+            "train": [path for difficulty in train_difficulties
+                       for path in source_files(scene, "train", difficulty)],
+            "val": [path for difficulty in val_difficulties
+                     for path in source_files(scene, "val", difficulty)],
+            "test": [path for difficulty in test_difficulties
+                      for path in source_files(scene, "test", difficulty)],
         }
         for scene in args.scenes
     }
     return {
         "protocol": args.protocol,
-        "dataset": "TrajImpute",
+        "dataset": "TrajGap" if protocol_cfg.get("dataset") == "trajgap" else "TrajImpute",
         "data_source": {
             "type": "official_release",
             "root": str(data_root),
@@ -177,6 +192,12 @@ def build_manifest(args, protocol_cfg):
         "env": env_info(),
         "model_version": args.variant,
         "backbone": {"bimamba": args.bimamba},
+        "model_switches": dict(VARIANTS[args.variant]),
+        "paired_group": (
+            f"{args.variant}_vs_M0_C1A_seed{args.seed}"
+            if args.variant in {"C2", "C3", "C4"}
+            else f"C1A_vs_M0_seed{args.seed}"
+        ),
         "seed": args.seed,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
@@ -221,8 +242,8 @@ def sh(cmd, log_path, env=None):
 
 
 def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
-    if protocol_cfg["dataset"] != "trajimpute":
-        raise ValueError("run_one_scene 只接受 TrajImpute protocol")
+    if protocol_cfg["dataset"] not in {"trajimpute", "trajgap"}:
+        raise ValueError("run_one_scene 只接受 TrajImpute/TrajGap protocol")
     sw = VARIANTS[args.variant]
     tag = f"{args.variant}_{scene}_{args.protocol}_seed{args.seed}"
     if args.bimamba is False:
@@ -267,6 +288,8 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
         f"bimamba={str(args.bimamba).lower()}",
+        f"model.target.model.readout_mode={sw['readout_mode']}",
+        f"model.target.model.evidence_state_mode={sw['evidence_state_mode']}",
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
@@ -308,7 +331,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
             "error": str(error),
         }
 
-    # 评估：同一 checkpoint 分别跑 Easy/Hard，保留跨条件泛化证据。
+    # 评估：同一 checkpoint 只评估统一的 Mixed 测试集。
     test_difficulties = protocol_cfg.get("test_difficulties", [protocol_cfg["difficulty"]])
     evaluations = []
     for test_difficulty in test_difficulties:
@@ -324,6 +347,8 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
             "--checkpoint", str(ckpt),
             "--output-root", str(run_dir / "eval" / test_difficulty),
             "--bimamba" if args.bimamba else "--no-bimamba",
+            "--readout-mode", sw["readout_mode"],
+            "--evidence-state-mode", sw["evidence_state_mode"],
         ]
         if protocol_cfg["zero_missing_only"]:
             eval_cmd += ["--zero-missing-only"]
@@ -387,8 +412,8 @@ def main():
     if args.K != DIRECT_NUM_MODES:
         raise SystemExit("TrajImpute 正式重训协议固定 K=20")
 
-    # model_version 标签（仅 output 命名）：M0->0
-    args.model_version_num = {"M0": "0"}[args.variant]
+    # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
+    args.model_version_num = {"M0": "0", "C1-A": "C1A", "C2": "C2", "C3": "C3", "C4": "C4"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if protocol_cfg["dataset"] == "trajimpute" and protocol_cfg["zero_missing_only"]:

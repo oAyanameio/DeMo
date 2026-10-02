@@ -15,3 +15,5 @@
 - checkpoint 文件名含 `=`（如 `epoch=73.ckpt`）时，Hydra override 必须整体加引号：`"checkpoint='outputs/.../epoch=73.ckpt'"`。Missing-Aware runner 内部已用 symlink（`best_for_eval.ckpt`）规避此问题。
 - eval 输出目录已存在 `model.log` 会 FileExistsError，重跑前先删整个 eval 目录。
 - 带 `=` 的路径也可用 `run_heldout_test.py` 的 symlink 方案规避。
+- C1-A（last-valid readout）vs M0 配对实验：`训练与评估/launch_c1a_4gpu.sh`，四卡各一条链（M0/C1-A × Easy/Hard，5 场景串行），输出 `outputs/c1a_m0_par_*`。
+- C3（observed-write / gap-propagation）Hard screening：`训练与评估/launch_c3_hard_screening.sh`，保留 M0/C1-A 现有结果为 control，输出 `outputs/c3_hard_screening_seed2024`。

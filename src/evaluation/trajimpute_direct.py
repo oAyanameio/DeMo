@@ -60,23 +60,49 @@ class DirectEvaluator:
         self.miss_threshold = miss_threshold
         # (scene, difficulty, split, missing_count) -> {metric: [values]}
         self.groups = defaultdict(lambda: defaultdict(list))
+        # dimension -> value -> {metric: [values]}
+        self.dimension_groups = defaultdict(
+            lambda: defaultdict(lambda: defaultdict(list))
+        )
 
-    def update(self, pred, prob, target, scene, difficulty, split, missing_count):
+    def update(self, pred, prob, target, scene, difficulty, split, missing_count,
+               valid_count=None, anchor_lag=None, forecast_gap=None):
         res = evaluate_predictions(pred, prob, target, self.miss_threshold)
         key = (scene, difficulty, split, int(missing_count))
         for name, vals in res.items():
             if name.startswith("_"):
                 continue
             self.groups[key][name].extend(vals.tolist())
+        dimensions = {"missing_count": int(missing_count)}
+        if valid_count is not None:
+            dimensions["valid_count"] = int(valid_count)
+        if anchor_lag is not None:
+            dimensions["anchor_lag"] = int(anchor_lag)
+            dimensions["terminal_missing"] = bool(int(anchor_lag) > 0)
+        if forecast_gap is not None:
+            dimensions["forecast_gap"] = int(forecast_gap)
+        for dimension, value in dimensions.items():
+            value_key = str(value).lower() if isinstance(value, bool) else str(value)
+            for name, vals in res.items():
+                if name.startswith("_"):
+                    continue
+                self.dimension_groups[dimension][value_key][name].extend(vals.tolist())
 
     def compute(self):
         """-> dict[layered results]；每级均含 n、micro 整体与分 missing_count 明细。"""
-        out: dict = {"by_group": {}, "overall": {}}
+        out: dict = {"by_group": {}, "by_dimension": {}, "overall": {}}
         for (scene, diff, split, mc), metrics in sorted(self.groups.items()):
             entry: dict = {"n": len(next(iter(metrics.values())))}
             for name, vals in metrics.items():
                 entry[name] = sum(vals) / len(vals)
             out["by_group"][f"{scene}/{diff}/{split}/missing={mc}"] = entry
+        for dimension, values in sorted(self.dimension_groups.items()):
+            out["by_dimension"][dimension] = {}
+            for value, metrics in sorted(values.items(), key=lambda item: item[0]):
+                entry = {"n": len(next(iter(metrics.values())))}
+                for name, vals in metrics.items():
+                    entry[name] = sum(vals) / len(vals)
+                out["by_dimension"][dimension][value] = entry
         # micro-average：所有样本平权
         all_vals = defaultdict(list)
         for metrics in self.groups.values():
