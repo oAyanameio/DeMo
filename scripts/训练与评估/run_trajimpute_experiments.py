@@ -37,14 +37,9 @@ DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "mixed-direct"
 DEFAULT_VARIANT = "M0"
 
-# variant -> 模型开关（唯一事实来源）
-VARIANTS = {
-    "M0": {"readout_mode": "last", "evidence_state_mode": "none"},
-    "C1-A": {"readout_mode": "last_valid", "evidence_state_mode": "none"},
-    "C2": {"readout_mode": "last", "evidence_state_mode": "gap_control"},
-    "C3": {"readout_mode": "last", "evidence_state_mode": "observed_write_gap"},
-    "C4": {"readout_mode": "last", "evidence_state_mode": "integrated"},
-}
+# Formal runner only retrains the M0 baseline. Failed historical arms are
+# retained in the result summary as diagnostics, not as entrypoints.
+VARIANTS = {"M0": {}}
 
 PROTOCOLS = {
     "mixed-direct": {
@@ -160,12 +155,6 @@ def build_manifest(args, protocol_cfg):
         "env": env_info(),
         "model_version": args.variant,
         "backbone": {"bimamba": args.bimamba},
-        "model_switches": dict(VARIANTS[args.variant]),
-        "paired_group": (
-            f"{args.variant}_vs_M0_C1A_seed{args.seed}"
-            if args.variant in {"C2", "C3", "C4"}
-            else f"C1A_vs_M0_seed{args.seed}"
-        ),
         "seed": args.seed,
         "batch_size": args.batch_size,
         "epochs": args.epochs,
@@ -204,7 +193,6 @@ def sh(cmd, log_path, env=None):
 def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
     if protocol_cfg["dataset"] != "trajgap":
         raise ValueError("run_one_scene 只接受 TrajGap protocol")
-    sw = VARIANTS[args.variant]
     tag = f"{args.variant}_{scene}_{args.protocol}_seed{args.seed}"
     if args.bimamba is False:
         tag += "_uni"
@@ -248,8 +236,6 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
         f"bimamba={str(args.bimamba).lower()}",
-        f"model.target.model.readout_mode={sw['readout_mode']}",
-        f"model.target.model.evidence_state_mode={sw['evidence_state_mode']}",
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
@@ -307,8 +293,6 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
             "--checkpoint", str(ckpt),
             "--output-root", str(run_dir / "eval" / test_difficulty),
             "--bimamba" if args.bimamba else "--no-bimamba",
-            "--readout-mode", sw["readout_mode"],
-            "--evidence-state-mode", sw["evidence_state_mode"],
         ]
         if protocol_cfg["zero_missing_only"]:
             eval_cmd += ["--zero-missing-only"]
@@ -373,7 +357,7 @@ def main():
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
-    args.model_version_num = {"M0": "0", "C1-A": "C1A", "C2": "C2", "C3": "C3", "C4": "C4"}[args.variant]
+    args.model_version_num = {"M0": "0"}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if args.protocol != "mixed-direct":

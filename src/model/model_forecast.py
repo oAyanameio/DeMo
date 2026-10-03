@@ -4,11 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers.transformer_blocks import Block
 from .layers.time_decoder import TimeDecoder
-from .layers.evidence_state import (
-    GapConditionedFeatureControl,
-    ObservedWriteGapState,
-    EvidenceConditionedAnchor,
-)
 from .layers.mamba.vim_mamba import init_weights, create_block
 from functools import partial
 from timm.models.layers import DropPath, to_2tuple
@@ -16,46 +11,6 @@ try:
     from mamba_ssm.ops.triton.layernorm import RMSNorm, layer_norm_fn, rms_norm_fn
 except ImportError:
     RMSNorm, layer_norm_fn, rms_norm_fn = None, None, None
-
-
-def select_history_readout(
-    sequence: torch.Tensor,
-    valid_mask: torch.Tensor,
-    mode: str = "last",
-) -> torch.Tensor:
-    """Select an actor-level history summary from temporal features.
-
-    Args:
-        sequence: Temporal features with shape ``[A, T, D]``.
-        valid_mask: Per-frame validity mask with shape ``[A, T]``.
-        mode: ``"last"`` preserves M0's fixed-final-timestep readout;
-            ``"last_valid"`` gathers each actor's last valid timestep.
-
-    Raises:
-        ValueError: If the shapes are incompatible, the mode is unknown, or
-            an actor has no valid history frame in ``last_valid`` mode.
-    """
-    if sequence.ndim != 3:
-        raise ValueError(f"sequence must be [A,T,D], got {tuple(sequence.shape)}")
-    if valid_mask.ndim != 2 or valid_mask.shape != sequence.shape[:2]:
-        raise ValueError(
-            "valid_mask must be [A,T] matching sequence, "
-            f"got {tuple(valid_mask.shape)} for {tuple(sequence.shape)}"
-        )
-    if mode == "last":
-        return sequence[:, -1]
-    if mode != "last_valid":
-        raise ValueError(f"unknown history readout mode: {mode!r}")
-
-    valid_mask = valid_mask.to(device=sequence.device, dtype=torch.bool)
-    has_valid = valid_mask.any(dim=1)
-    if not bool(has_valid.all()):
-        raise ValueError("last_valid readout requires at least one valid frame per actor")
-
-    time_indices = torch.arange(sequence.size(1), device=sequence.device)
-    last_valid = torch.where(valid_mask, time_indices.unsqueeze(0), -1).amax(dim=1)
-    actor_indices = torch.arange(sequence.size(0), device=sequence.device)
-    return sequence[actor_indices, last_valid]
 
 
 # only 'DeMo'
@@ -73,30 +28,12 @@ class ModelForecast(nn.Module):
         bimamba: bool = False,
         dt: float = 0.4,
         obs_len: int = 8,
-        readout_mode: str = "last",
-        evidence_state_mode: str = "none",
-        evidence_conditioning: bool = False,
     ) -> None:
         super().__init__()
-        if readout_mode not in {"last", "last_valid"}:
-            raise ValueError(
-                f"unknown history readout mode: {readout_mode!r}; "
-                "expected 'last' or 'last_valid'"
-            )
-        if evidence_state_mode not in {"none", "gap_control", "observed_write_gap", "integrated"}:
-            raise ValueError(
-                f"unknown evidence state mode: {evidence_state_mode!r}; "
-                "expected 'none', 'gap_control', 'observed_write_gap', or 'integrated'"
-            )
         self.future_steps = future_steps
         self.dt = dt
         self.num_actor_types = num_actor_types
         self.obs_len = obs_len
-        self.readout_mode = readout_mode
-        self.evidence_state_mode = evidence_state_mode
-        self.evidence_conditioning = bool(
-            evidence_conditioning or evidence_state_mode == "integrated"
-        )
 
         hist_input_dim = 4
 
@@ -151,60 +88,9 @@ class ModelForecast(nn.Module):
             nn.Linear(1, 64), nn.GELU(), nn.Linear(64, embed_dim)
         )
 
-        self.time_decoder = TimeDecoder(
-            future_len=future_steps,
-            dim=embed_dim,
-            num_modes=num_modes,
-            evidence_conditioning=self.evidence_conditioning,
-        )
-
-        # Keep C3 out of the baseline initialization RNG stream. Shared
-        # modules initialize first; the optional state layer is created and
-        # initialized afterward so paired M0/C1-A weights remain bit-identical.
-        self.gap_control = None
-        self.evidence_state = None
-        self.evidence_anchor = None
+        self.time_decoder = TimeDecoder(future_len=future_steps, dim=embed_dim, num_modes=num_modes)
 
         self.initialize_weights()
-        if evidence_state_mode in {"gap_control", "observed_write_gap", "integrated"}:
-            rng_state = torch.random.get_rng_state()
-            if evidence_state_mode == "gap_control":
-                self.gap_control = GapConditionedFeatureControl(input_dim=embed_dim)
-                self.gap_control.apply(self._init_weights)
-                self.gap_control.zero_initialize_residual()
-            else:
-                self.evidence_state = ObservedWriteGapState(
-                    input_dim=embed_dim, state_dim=embed_dim
-                )
-                self.evidence_state.apply(self._init_weights)
-                self.evidence_state.zero_initialize_residual()
-            if evidence_state_mode == "integrated":
-                self.evidence_anchor = EvidenceConditionedAnchor(embed_dim)
-                self.time_decoder.build_evidence_conditioning()
-            torch.random.set_rng_state(rng_state)
-
-    @staticmethod
-    def _max_missing_run(valid: torch.Tensor) -> torch.Tensor:
-        current = torch.zeros(valid.shape[0], device=valid.device, dtype=torch.long)
-        best = current.clone()
-        for t in range(valid.shape[1]):
-            current = torch.where(valid[:, t], torch.zeros_like(current), current + 1)
-            best = torch.maximum(best, current)
-        return best
-
-    def _evidence_features(self, valid: torch.Tensor) -> torch.Tensor:
-        valid_count = valid.sum(-1).float() / float(self.obs_len)
-        idx = torch.arange(valid.shape[1], device=valid.device)
-        last_valid = torch.where(valid, idx.unsqueeze(0), -1).amax(-1)
-        anchor_lag = (self.obs_len - 1 - last_valid).clamp(min=0).float()
-        forecast_gap = (self.obs_len - last_valid).clamp(min=1).float()
-        max_run = self._max_missing_run(valid).float()
-        return torch.stack((
-            valid_count,
-            anchor_lag / float(max(1, self.obs_len - 1)),
-            forecast_gap / float(self.obs_len),
-            max_run / float(self.obs_len),
-        ), dim=-1)
 
     def initialize_weights(self):
         nn.init.normal_(self.actor_type_embed, std=0.02)
@@ -243,38 +129,8 @@ class ModelForecast(nn.Module):
         hist_feat = hist_feat.view(B * N, L, D)
         hist_feat_key_valid = hist_key_valid_mask.view(B * N)
 
-        actor_tokens = self.hist_embed_mlp(hist_feat[hist_feat_key_valid].contiguous())
-        actor_valid = hist_valid_mask.view(B * N, L)[hist_feat_key_valid]
-        if self.evidence_state_mode == "integrated":
-            # Do not let a placeholder write into the unchanged Mamba stack.
-            # The learned state residual can still propagate across this gap.
-            actor_tokens = actor_tokens * actor_valid.unsqueeze(-1).to(actor_tokens.dtype)
-        evidence_real = None
-        if self.evidence_state_mode in {"gap_control", "observed_write_gap", "integrated"}:
-            if "x_gap_steps" not in data:
-                raise KeyError(
-                    f"{self.evidence_state_mode} requires data['x_gap_steps']"
-                )
-            actor_gaps = data["x_gap_steps"].view(B * N, L)[hist_feat_key_valid]
-            if self.evidence_state_mode == "gap_control":
-                if self.gap_control is None:
-                    raise RuntimeError("gap_control mode is missing its control module")
-                actor_tokens = actor_tokens + self.gap_control.forward_residual(
-                    actor_tokens, actor_gaps
-                )
-            else:
-                if self.evidence_state is None:
-                    raise RuntimeError("observed_write_gap mode is missing its evidence_state module")
-                # C3: explicit propagation/write semantics before the unchanged
-                # Mamba backbone. Invalid observations cannot write into state.
-                actor_tokens = actor_tokens + self.evidence_state.forward_residual(
-                    actor_tokens, actor_valid, actor_gaps
-                )
-            if self.evidence_state_mode == "integrated":
-                evidence_real = self._evidence_features(actor_valid)
-
-        # The temporal Mamba stack remains shared across M0/C1-A/C3.
-        actor_feat = actor_tokens
+        # unidirectional mamba
+        actor_feat = self.hist_embed_mlp(hist_feat[hist_feat_key_valid].contiguous())
         residual = None
         for blk_mamba in self.hist_embed_mamba:
             actor_feat, residual = blk_mamba(actor_feat, residual)
@@ -288,28 +144,13 @@ class ModelForecast(nn.Module):
             prenorm=False,
             residual_in_fp32=True
         )
-        if self.evidence_state_mode == "integrated":
-            last_state = actor_feat[:, -1]
-            last_valid_state = select_history_readout(actor_feat, actor_valid, mode="last_valid")
-            actor_feat = self.evidence_anchor(last_state, last_valid_state, evidence_real)
-        else:
-            actor_feat = select_history_readout(
-                actor_feat,
-                actor_valid,
-                mode=self.readout_mode,
-            )
+
+        actor_feat = actor_feat[:, -1]
         actor_feat_tmp = torch.zeros(
             B * N, actor_feat.shape[-1], dtype=actor_feat.dtype, device=actor_feat.device
         )
         actor_feat_tmp[hist_feat_key_valid] = actor_feat
         actor_feat = actor_feat_tmp.view(B, N, actor_feat.shape[-1])
-        decoder_evidence = None
-        if self.evidence_conditioning:
-            if evidence_real is None:
-                raise RuntimeError("integrated evidence features were not constructed")
-            evidence_tmp = evidence_real.new_zeros((B * N, 4))
-            evidence_tmp[hist_feat_key_valid] = evidence_real
-            decoder_evidence = evidence_tmp.view(B, N, 4)[:, 0]
 
         # type embedding and position embedding
         x_centers = data["x_centers"]
@@ -364,9 +205,7 @@ class ModelForecast(nn.Module):
 
         # decoder module with decoupled queries
         dense_predict, y_hat, pi, x_mode, new_y_hat, new_pi, mode_dense, scal, scal_new = \
-        self.time_decoder(
-            mode, x_encoder, mask=~key_valid_mask, evidence=decoder_evidence
-        )
+        self.time_decoder(mode, x_encoder, mask=~key_valid_mask)
 
         ret_dict = {
             "y_hat": y_hat,  # trajectory output from mode query

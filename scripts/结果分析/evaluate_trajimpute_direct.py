@@ -22,18 +22,12 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
-    MIXED_DIFFICULTY, TrajGapDataset, TrajImputeDataset,
-    trajimpute_collate_fn, inspect_clean_source,
+    MIXED_DIFFICULTY, TrajGapDataset, trajimpute_collate_fn,
+    inspect_clean_source,
 )
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
-VARIANTS = {
-    "M0": {"readout_mode": "last", "evidence_state_mode": "none"},
-    "C1-A": {"readout_mode": "last_valid", "evidence_state_mode": "none"},
-    "C2": {"readout_mode": "last", "evidence_state_mode": "gap_control"},
-    "C3": {"readout_mode": "last", "evidence_state_mode": "observed_write_gap"},
-    "C4": {"readout_mode": "last", "evidence_state_mode": "integrated"},
-}
+VARIANTS = {"M0": {}}
 
 
 def get_git_revision():
@@ -44,24 +38,12 @@ def get_git_revision():
         return "unknown"
 
 
-def build_model(
-    variant: str,
-    num_modes: int,
-    bimamba: bool = False,
-    readout_mode=None,
-    evidence_state_mode=None,
-):
+def build_model(variant: str, num_modes: int, bimamba: bool = False):
     from src.model.model_forecast import ModelForecast
-    switches = dict(VARIANTS[variant])
-    if readout_mode is not None:
-        switches["readout_mode"] = readout_mode
-    if evidence_state_mode is not None:
-        switches["evidence_state_mode"] = evidence_state_mode
     return ModelForecast(
         embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
         qkv_bias=False, drop_path=0.2, num_actor_types=1,
         num_modes=num_modes, bimamba=bimamba, dt=0.4, obs_len=8,
-        **switches,
     )
 
 
@@ -147,25 +129,17 @@ def main():
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--bimamba", action=argparse.BooleanOptionalAction, default=False,
                     help="主链固定单向(2026-09-12裁定)；须与训练时一致")
-    ap.add_argument("--readout-mode", choices=["last", "last_valid"], default=None,
-                    help="历史摘要读取；默认跟随 variant")
-    ap.add_argument("--evidence-state-mode", choices=["none", "gap_control", "observed_write_gap", "integrated"], default=None,
-                    help="证据状态机制；默认跟随 variant")
     args = ap.parse_args()
 
     if args.K != 20:
         raise SystemExit("TrajGap-Bench Mixed direct 正式评估固定 K=20")
 
     torch.manual_seed(args.seed)
-    if args.difficulty == MIXED_DIFFICULTY:
-        if args.zero_missing_only:
-            raise SystemExit("Mixed 协议不支持 zero_missing_only 诊断筛选")
-        dataset = TrajGapDataset(args.data_root, args.scene, args.split)
-    else:
-        dataset = TrajImputeDataset(
-            args.data_root, args.scene, args.difficulty, args.split,
-            zero_missing_only=args.zero_missing_only,
-        )
+    if args.difficulty != MIXED_DIFFICULTY:
+        raise SystemExit("TrajGap-Bench 正式评估只允许 Mixed")
+    if args.zero_missing_only:
+        raise SystemExit("Mixed 协议不支持 zero_missing_only 诊断筛选")
+    dataset = TrajGapDataset(args.data_root, args.scene, args.split)
     # Mixed 主协议不做子集过滤；保留总行数用于完整性审计。
     n_total_rows = int(dataset.missing_counts.shape[0])
     n_kept_focal = len(dataset)
@@ -174,8 +148,6 @@ def main():
         args.variant,
         args.K,
         bimamba=args.bimamba,
-        readout_mode=args.readout_mode,
-        evidence_state_mode=args.evidence_state_mode,
     )
 
     ckpt_info = None
@@ -202,9 +174,6 @@ def main():
         "difficulty": args.difficulty,
         "split": args.split,
         "variant": args.variant,
-        "model_switches": dict(VARIANTS[args.variant]),
-        "readout_mode": args.readout_mode or VARIANTS[args.variant]["readout_mode"],
-        "evidence_state_mode": args.evidence_state_mode or VARIANTS[args.variant]["evidence_state_mode"],
         "seed": args.seed,
         "K": args.K,
         "evaluator": "src/evaluation/trajimpute_direct.py (TrajGap Mixed direct, no imputation)",
