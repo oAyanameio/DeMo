@@ -59,8 +59,8 @@ def get_git_revision():
 
 
 def build_model(K: int):
-    from src.model.model_forecast import ModelForecast
-    return ModelForecast(
+    from src.model.trajectory_forecaster import TrajectoryForecaster
+    return TrajectoryForecaster(
         embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
         qkv_bias=False, drop_path=0.2, num_actor_types=1,
         num_modes=K, bimamba=False, dt=0.4, obs_len=8,

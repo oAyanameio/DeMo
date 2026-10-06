@@ -2,7 +2,7 @@
 
 基于 [DeMo (NeurIPS 2024)](https://arxiv.org/abs/2410.05982) 的行人轨迹预测（pedestrian trajectory prediction）研究代码库，收缩为 ETH/UCY + SDD 双数据集、DeMo actor-only（无地图/车道）模型，以及 TrajImpute 官方缺失历史数据协议。
 
-- 模型：DeMo 单向（UniMamba）/ 双向（BiMamba）actor-only 骨干，唯一变量为方向性
+- 模型：`TrajectoryForecaster`（旧名 `ModelForecast`）+ `FutureDistributionDecoder`（旧名 `TimeDecoder`）；Mode Query、State Query、Hybrid Coupling 以及 UniMamba/BiMamba 术语保持原样
 - 数据：ETH/UCY 5 折留一（LOO）+ SDD 原始协议；缺失历史主线使用 TrajImpute 官方 Easy/Hard release
 - 上游完整版本（含 AV2/自动驾驶管线）存档于 [DeMo_Origin](https://github.com/oAyanameio/DeMo_Origin)
 
@@ -59,7 +59,7 @@ PYTHONNOUSERSITE=1 PYTHONPATH=. python scripts/训练与评估/run_trajimpute_ex
 ```
 conf/                 Hydra 配置（ETH/UCY、SDD、TrajImpute）
 src/datamodule/       ETH/UCY、SDD 与 TrajImpute 数据管线
-src/model/            DeMo actor-only（ModelForecast + TimeDecoder）
+src/model/            TrajectoryForecaster + FutureDistributionDecoder（旧名兼容入口保留）
 src/metrics/          minADE/minFDE/MR/brierFDE
 scripts/              数据集构建 / 训练与评估 / 审计与校验 / 结果分析
 docs/                 研究文档、实验结果、审计报告、数据集说明

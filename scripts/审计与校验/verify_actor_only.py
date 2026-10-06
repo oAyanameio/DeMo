@@ -13,11 +13,11 @@ sys.path.insert(0, str(ROOT))
 
 
 def check_instantiation():
-    from src.model.trainer_forecast import Trainer
+    from src.model.forecasting_module import ForecastingLightningModule
 
     def build(cfgdict, label):
         m = copy.deepcopy(cfgdict)
-        net = Trainer(model=m)
+        net = ForecastingLightningModule(model=m)
         bad = [a for a in ["use_map", "lane_embed", "lane_type_embed", "interaction",
                            "mode_fusion", "stream_loc", "traj_embed", "pose_dim",
                            "use_stream_encoder", "use_stream_decoder"]
