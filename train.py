@@ -10,6 +10,12 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 
+import torch
+
+# TF32（RTX 5880 Ada 张量核心，PyTorch warning 提示）。只影响新启动的进程；
+# bf16 AMP 训练下数值影响局限于 autocast 外的 fp32 matmul。
+torch.set_float32_matmul_precision("high")
+
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf):

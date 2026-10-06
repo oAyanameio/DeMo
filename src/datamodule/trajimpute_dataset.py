@@ -429,6 +429,13 @@ class TrajImputeDataset(Dataset):
         self.sample_valid_counts = [int(self.valid_counts[row]) for _, _, _, row in self.samples]
         self.sample_anchor_lags = [int(self.anchor_lags[row]) for _, _, _, row in self.samples]
         self.sample_forecast_gaps = [int(self.forecast_gaps[row]) for _, _, _, row in self.samples]
+        # 逐样本懒缓存（2026-10-06）：样本是 index 的纯函数；build_sample 的 CPU
+        # 构造成本 ~1.2ms/样本（2026-10-05 cProfile：占数据管线 84%）。首次访问
+        # 走下方原路径构造并存入缓存，后续 epoch 直接复用——缓存值即原路径
+        # 返回值（同一代码产出，构造性逐位一致）。fork 型 DataLoader worker
+        # 各自缓存分到的样本，跨 epoch（persistent_workers）持续生效。
+        # 等价性门禁：scripts/审计与校验/check_sample_cache_equivalence.py。
+        self._sample_cache = {}
         print(
             f"TrajImputeDataset {scene}/{difficulty}/{split}: "
             f"{len(self.samples)} focal samples from {len(seq_start_end)} sequences "
@@ -439,6 +446,9 @@ class TrajImputeDataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, index: int):
+        cached = self._sample_cache.get(index)
+        if cached is not None:
+            return cached
         seq_i, s, e, focal_row = self.samples[index]
         hist_world = self.obs[s:e]
         future_world = self.pred[s:e]
@@ -457,6 +467,7 @@ class TrajImputeDataset(Dataset):
         )
         sample["seq_index"] = seq_i
         sample["num_actors"] = e - s
+        self._sample_cache[index] = sample
         return sample
 
 
