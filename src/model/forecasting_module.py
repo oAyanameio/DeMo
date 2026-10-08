@@ -248,16 +248,8 @@ class ForecastingLightningModule(pl.LightningModule):
             nn.LSTM,
             nn.GRU,
         )
-        blacklist_weight_modules = (
-            nn.BatchNorm1d,
-            nn.BatchNorm2d,
-            nn.BatchNorm3d,
-            nn.SyncBatchNorm,
-            nn.LayerNorm,
-            nn.Embedding,
-        )
         for module_name, module in self.named_modules():
-            for param_name, param in module.named_parameters():
+            for param_name, param in module.named_parameters(recurse=False):
                 full_param_name = (
                     "%s.%s" % (module_name, param_name) if module_name else param_name
                 )
@@ -266,7 +258,9 @@ class ForecastingLightningModule(pl.LightningModule):
                 elif "weight" in param_name:
                     if isinstance(module, whitelist_weight_modules):
                         decay.add(full_param_name)
-                    elif isinstance(module, blacklist_weight_modules):
+                    else:
+                        # Custom mixers/RMSNorms are not all covered by the
+                        # module lists; trainable weights must never be omitted.
                         no_decay.add(full_param_name)
                 elif not ("weight" in param_name or "bias" in param_name):
                     no_decay.add(full_param_name)
