@@ -23,11 +23,16 @@ sys.path.insert(0, str(REPO))
 
 from src.datamodule.trajimpute_dataset import (  # noqa: E402
     MIXED_DIFFICULTY, TrajGapDataset, trajimpute_collate_fn,
-    inspect_clean_source,
+    inspect_clean_source, classify_evidence_bin,
 )
 from src.evaluation.trajimpute_direct import DirectEvaluator, save_results  # noqa: E402
 
-VARIANTS = {"M0": {}}
+VARIANTS = {
+    "M0": {},
+    # M1：自然缺失证据条件化输出校准（方案 §6）。校准头进 checkpoint，
+    # 评估时必须以相同开关重建模型，否则校准权重被 strict=False 静默丢弃。
+    "M1": {"calibration": True},
+}
 
 
 def get_git_revision():
@@ -44,6 +49,7 @@ def build_model(variant: str, num_modes: int, bimamba: bool = False):
         embed_dim=128, future_steps=12, num_heads=8, mlp_ratio=4.0,
         qkv_bias=False, drop_path=0.2, num_actor_types=1,
         num_modes=num_modes, bimamba=bimamba, dt=0.4, obs_len=8,
+        **VARIANTS[variant],
     )
 
 
@@ -58,6 +64,19 @@ def load_checkpoint(model, ckpt_path):
         )
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
+    # 强校验：calibration 开关与 checkpoint 参数必须匹配，防止 M0/M1 静默错配
+    cal_keys = [k for k in cleaned if k.startswith("calibration_head.")]
+    expects_cal = hasattr(model, "calibration_head")
+    if expects_cal and not cal_keys:
+        raise ValueError(
+            f"variant 要求 calibration=true，但 checkpoint 无 calibration_head 参数: "
+            f"{ckpt_path}（这是 M0 checkpoint，不能标成 M1 评估）"
+        )
+    if not expects_cal and cal_keys:
+        raise ValueError(
+            f"variant=M0 要求原始模型，但 checkpoint 含 calibration_head 参数（{len(cal_keys)} 个）: "
+            f"{ckpt_path}（M1 checkpoint 必须用 --variant M1 评估）"
+        )
     missing, unexpected = model.load_state_dict(cleaned, strict=False)
     return missing, unexpected
 
@@ -65,11 +84,13 @@ def load_checkpoint(model, ckpt_path):
 @torch.no_grad()
 def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
                    device="cuda:0", batch_size=64, num_workers=2, max_batches=None):
+    """返回 (results_cal, results_raw)；非 M1 校准模型两者相同。"""
     from torch.utils.data import DataLoader
     model = model.to(device).eval()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
                         num_workers=num_workers, collate_fn=trajimpute_collate_fn)
     evaluator = DirectEvaluator()
+    evaluator_raw = DirectEvaluator()
     n_batches = 0
     for batch in loader:
         batch_dev = {
@@ -78,33 +99,69 @@ def run_evaluation(model, dataset, K, scene, difficulty, split, variant, seed,
         out = model(batch_dev)
         # 与 trainer.test_step 一致：最终输出 new_y_hat/new_pi 优先
         pred = out["new_y_hat"] if out.get("new_y_hat") is not None else out["y_hat"]
-        prob = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
+        prob_raw = out["new_pi"] if out.get("new_pi") is not None else out["pi"]
+        prob_cal = out.get("new_pi_cal", prob_raw)
         pred = pred[..., :2]
         if pred.shape[1] != K:
             raise RuntimeError(
                 f"模型实际输出 K={pred.shape[1]}，但评估协议要求 K={K}"
             )
         target = batch_dev["target"][:, 0]  # focal [B, T, 2]
-        prob = prob.float()
+        prob_raw = prob_raw.float()
+        prob_cal = prob_cal.float()
         focal_valid = batch["x_valid_mask"][:, 0]
         valid_count = focal_valid.sum(-1)
         anchor_lag = batch["x_anchor_lag_steps"][:, 0]
         forecast_gap = batch["x_forecast_gap_steps"][:, 0]
+        # M1 机制诊断维度（方案 §6.5）：evidence bin / max_missing_run /
+        # mode entropy / calibrated scale —— 只由历史 mask 与模型输出计算
+        if "max_missing_run" in batch:
+            max_run = batch["max_missing_run"]
+        else:
+            from src.model.layers.missingness_calibration import max_missing_run_batch
+            max_run = max_missing_run_batch(focal_valid)
+        has_cal = out.get("new_pi_cal") is not None
+        ent_raw = -(torch.softmax(prob_raw, dim=-1)
+                    * torch.log_softmax(prob_raw, dim=-1)).sum(-1)  # [B]
+        ent_cal = (-(torch.softmax(prob_cal, dim=-1)
+                     * torch.log_softmax(prob_cal, dim=-1)).sum(-1)
+                   if has_cal else ent_raw)
+        scale_cal_mean = (out["scal_cal"].float().mean(dim=(1, 2, 3))
+                          if has_cal else None)
+        scale_raw_mean = (out["scal_new"].float().mean(dim=(1, 2, 3))
+                          if out.get("scal_new") is not None else None)
         # 逐样本分组（batch 内证据条件可能不同）
         for i in range(pred.shape[0]):
-            evaluator.update(
-                pred[i:i + 1].float().cpu(), prob[i:i + 1].cpu(),
-                target[i:i + 1].cpu(),
+            common = dict(
                 scene=scene, difficulty=difficulty, split=split,
                 missing_count=int(batch["missing_count"][i]),
                 valid_count=int(valid_count[i]),
                 anchor_lag=int(anchor_lag[i]),
                 forecast_gap=int(forecast_gap[i]),
+                max_missing_run=int(max_run[i]),
+                evidence_bin=classify_evidence_bin(focal_valid[i].cpu()),
+            )
+            evaluator.update(
+                pred[i:i + 1].float().cpu(), prob_cal[i:i + 1].cpu(),
+                target[i:i + 1].cpu(),
+                mode_entropy=float(ent_cal[i]),
+                scale_mean=(float(scale_cal_mean[i])
+                            if scale_cal_mean is not None else None),
+                **common,
+            )
+            # raw 概率的 entropy / raw scale 作为对照诊断
+            evaluator_raw.update(
+                pred[i:i + 1].float().cpu(), prob_raw[i:i + 1].cpu(),
+                target[i:i + 1].cpu(),
+                mode_entropy=float(ent_raw[i]),
+                scale_mean=(float(scale_raw_mean[i])
+                            if scale_raw_mean is not None else None),
+                **common,
             )
         n_batches += 1
         if max_batches is not None and n_batches >= max_batches:
             break
-    return evaluator.compute()
+    return evaluator.compute(), evaluator_raw.compute()
 
 
 def main():
@@ -157,11 +214,16 @@ def main():
             "path": str(args.checkpoint),
             "missing_keys": [k for k in missing if "gap_embed" not in k],
             "unexpected_keys": list(unexpected)[:20],
+            "calibration_enabled": bool(VARIANTS[args.variant].get("calibration")),
+            "calibration_params_loaded": (
+                not any(k.startswith("calibration_head.") for k in missing)
+                if VARIANTS[args.variant].get("calibration") else None
+            ),
         }
     elif not args.untrained:
         raise SystemExit("需要 --checkpoint 或 --untrained（冒烟）之一")
 
-    results = run_evaluation(
+    results, results_raw = run_evaluation(
         model, dataset, args.K, args.scene, args.difficulty, args.split,
         args.variant, args.seed, device=args.device,
         batch_size=args.batch_size, num_workers=args.num_workers,
@@ -199,7 +261,17 @@ def main():
         f"{args.scene}_{args.difficulty}_{args.split}_{args.variant}_seed{args.seed}_{tag}")
     if out_dir.exists():
         raise SystemExit(f"输出目录已存在，拒绝覆盖: {out_dir}")
+    # M1：raw 与 calibrated 双套结果并存（方案 §6.5/§9.2）；
+    # calibrated 写主 results.json，raw 单独落盘，禁止只保留校准结果。
+    payload = {
+        "meta": meta,
+        "results": results,
+    }
+    if args.variant in VARIANTS and VARIANTS[args.variant].get("calibration"):
+        payload["results_raw"] = results_raw
     out_path = save_results(results, meta, out_dir / "results.json")
+    if "results_raw" in payload:
+        save_results(results_raw, meta, out_dir / "results_raw.json")
     print(f"\n[results] {out_path}")
     ov = results["overall"]
     print(f"overall n={ov['n']} minADE{args.K}={ov['minADE_K']:.4f} "

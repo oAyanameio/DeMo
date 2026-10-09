@@ -4,6 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .layers.transformer_blocks import Block
 from .layers.structured_future_decoder import FutureDistributionDecoder
+from .layers.missingness_calibration import (
+    MissingnessCalibrationHead, build_evidence_features, max_missing_run_batch,
+)
 from .layers.mamba.vim_mamba import init_weights, create_block
 from functools import partial
 from timm.models.layers import DropPath, to_2tuple
@@ -28,6 +31,9 @@ class TrajectoryForecaster(nn.Module):
         bimamba: bool = False,
         dt: float = 0.4,
         obs_len: int = 8,
+        calibration: bool = False,
+        calibration_hidden_dim: int = 32,
+        calibration_max_log: float = 2.0,
     ) -> None:
         super().__init__()
         self.future_steps = future_steps
@@ -100,6 +106,16 @@ class TrajectoryForecaster(nn.Module):
         )
 
         self.initialize_weights()
+
+        # M1 校准头：在 initialize_weights() 之后创建，避免被 _init_weights
+        # 的 xavier 覆写；其自身 reset_calibration_parameters() 用 constant_
+        # 零初始化（不消耗 RNG draw），保证同 seed 下主链参数与 M0 逐位一致。
+        self.calibration_enabled = bool(calibration)
+        if self.calibration_enabled:
+            self.calibration_head = MissingnessCalibrationHead(
+                hidden_dim=calibration_hidden_dim,
+                max_log_magnitude=calibration_max_log,
+            )
 
     def initialize_weights(self):
         nn.init.normal_(self.actor_type_embed, std=0.02)
@@ -291,7 +307,43 @@ class TrajectoryForecaster(nn.Module):
             "scal_new": scal_new,  # final output for Laplace loss
         }
 
+        # M1：自然缺失证据条件化校准（只改 new_pi/scal_new，不动 new_y_hat）
+        if self.calibration_enabled:
+            ret_dict.update(
+                self._calibrate_outputs(new_pi, scal_new, data)
+            )
+
         return ret_dict
+
+    def _calibrate_outputs(self, new_pi, scal_new, data):
+        """按方案 §6.3 计算 new_pi_cal / scal_cal 与诊断字段。
+
+        evidence 只来自 focal(=actor 0) 历史 mask 派生字段；
+        all-valid 样本 missing_ratio=0 -> 恒等映射（log_tau=log_scale=0）。
+        """
+        focal_valid = data["x_valid_mask"][:, 0]            # [B, T]
+        valid_ratio = focal_valid.float().mean(dim=-1)      # [B]
+        anchor_lag = data["x_anchor_lag_steps"][:, 0].float()
+        forecast_gap = data["x_forecast_gap_steps"][:, 0].float()
+        if "max_missing_run" in data:
+            max_run = data["max_missing_run"].float()
+        else:
+            # 老数据路径回退：由 mask 现算（语义与 dataset 字段一致）
+            max_run = max_missing_run_batch(focal_valid).float()
+        evidence = build_evidence_features(
+            valid_ratio, anchor_lag, forecast_gap, max_run, obs_len=self.obs_len
+        )
+        log_tau, log_scale = self.calibration_head(evidence)  # [B]
+        # temperature：new_pi / exp(log_tau) —— 均匀化 mode logits
+        new_pi_cal = new_pi / torch.exp(log_tau).view(-1, *([1] * (new_pi.dim() - 1)))
+        # scale：[B,1,1,1] 广播到 scal_new [B, M, T, 2]
+        scal_cal = scal_new * torch.exp(log_scale).view(-1, 1, 1, 1)
+        return {
+            "new_pi_cal": new_pi_cal,
+            "scal_cal": scal_cal,
+            "calibration_log_tau": log_tau,
+            "calibration_log_scale": log_scale,
+        }
 
 
 # Legacy class name kept for old configs and external scripts.

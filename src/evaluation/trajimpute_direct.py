@@ -66,14 +66,30 @@ class DirectEvaluator:
         )
 
     def update(self, pred, prob, target, scene, difficulty, split, missing_count,
-               valid_count=None, anchor_lag=None, forecast_gap=None):
+               valid_count=None, anchor_lag=None, forecast_gap=None,
+               max_missing_run=None, evidence_bin=None,
+               mode_entropy=None, scale_mean=None):
         res = evaluate_predictions(pred, prob, target, self.miss_threshold)
+        # 逐样本概率质量诊断（M1 机制假设：高缺失 -> entropy/尺度变化）
+        if mode_entropy is not None:
+            res = dict(res)
+            res["mode_entropy"] = (
+                mode_entropy.tolist()
+                if torch.is_tensor(mode_entropy) else [float(mode_entropy)]
+            )
+        if scale_mean is not None:
+            res = dict(res)
+            res["scale_mean"] = (
+                scale_mean.tolist()
+                if torch.is_tensor(scale_mean) else [float(scale_mean)]
+            )
         key = (scene, difficulty, split, int(missing_count))
         for name, vals in res.items():
             if name.startswith("_"):
                 continue
-            self.groups[key][name].extend(vals.tolist())
-        dimensions = {"missing_count": int(missing_count)}
+            vals_list = vals.tolist() if torch.is_tensor(vals) else list(vals)
+            self.groups[key][name].extend(vals_list)
+        dimensions: dict = {"missing_count": int(missing_count)}
         if valid_count is not None:
             dimensions["valid_count"] = int(valid_count)
         if anchor_lag is not None:
@@ -81,12 +97,17 @@ class DirectEvaluator:
             dimensions["terminal_missing"] = bool(int(anchor_lag) > 0)
         if forecast_gap is not None:
             dimensions["forecast_gap"] = int(forecast_gap)
+        if max_missing_run is not None:
+            dimensions["max_missing_run"] = int(max_missing_run)
+        if evidence_bin is not None:
+            dimensions["evidence_bin"] = str(evidence_bin)
         for dimension, value in dimensions.items():
             value_key = str(value).lower() if isinstance(value, bool) else str(value)
             for name, vals in res.items():
                 if name.startswith("_"):
                     continue
-                self.dimension_groups[dimension][value_key][name].extend(vals.tolist())
+                vals_list = vals.tolist() if torch.is_tensor(vals) else list(vals)
+                self.dimension_groups[dimension][value_key][name].extend(vals_list)
 
     def compute(self):
         """-> dict[layered results]；每级均含 n、micro 整体与分 missing_count 明细。"""

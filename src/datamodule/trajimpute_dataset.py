@@ -358,6 +358,7 @@ def build_sample(
         "scene_id": scene_id,
         "track_id": track_id,
         "missing_count": int((~hist_valid[0]).sum().item()),
+        "max_missing_run": int(max_missing_run(hist_valid[0])),
         "focal_last_valid_idx": int(focal_last),
         "timestamp": torch.tensor([obs_len * 0.4]),
     }
@@ -585,6 +586,10 @@ def trajimpute_collate_fn(batch):
     data["theta"] = torch.cat([b["theta"] for b in batch])
     data["timestamp"] = torch.cat([b["timestamp"] for b in batch])
     data["missing_count"] = torch.tensor([b["missing_count"] for b in batch], dtype=torch.long)
+    # focal 最长连续缺失段（诊断/校准特征来源，仅由历史 mask 计算）
+    data["max_missing_run"] = torch.tensor(
+        [b.get("max_missing_run", 0) for b in batch], dtype=torch.long
+    )
     data["focal_last_valid_idx"] = torch.tensor(
         [b["focal_last_valid_idx"] for b in batch], dtype=torch.long
     )

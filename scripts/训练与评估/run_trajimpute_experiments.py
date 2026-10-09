@@ -37,9 +37,13 @@ DIRECT_NUM_MODES = 20
 DEFAULT_PROTOCOL = "mixed-direct"
 DEFAULT_VARIANT = "M0"
 
-# Formal runner only retrains the M0 baseline. Failed historical arms are
-# retained in the result summary as diagnostics, not as entrypoints.
-VARIANTS = {"M0": {}}
+# Formal runner: M0 baseline + M1 missingness-aware output calibration
+# (方案 §6, 2026-10-08 版). Failed historical arms are retained in the result
+# summary as diagnostics, not as entrypoints.
+VARIANTS = {
+    "M0": {},
+    "M1": {"calibration": True},
+}
 
 PROTOCOLS = {
     "mixed-direct": {
@@ -165,7 +169,7 @@ def build_manifest(args, protocol_cfg):
         "sampling_definition": {
             "natural": "TrajGap Mixed train dataset with official Easy/Hard source samples concatenated and shuffled",
         },
-        "monitor": f"val_minFDE{args.K}",
+        "monitor": variant_monitor(args.variant, args.K),
         "K": args.K,
         "training_mode": "retrain_missing_data",
         "zero_missing_only": False,
@@ -177,6 +181,13 @@ def build_manifest(args, protocol_cfg):
         "command": " ".join(sys.argv),
     }
 
+
+
+def variant_monitor(variant: str, K: int) -> str:
+    """checkpoint 选点 monitor：与最终评估分支一致（M1=calibrated final）。"""
+    if VARIANTS[variant].get("calibration"):
+        return f"val_cal_minFDE{K}"
+    return f"val_minFDE{K}"
 
 
 def sh(cmd, log_path, env=None):
@@ -218,6 +229,9 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
             json.dump(m, f, indent=2, ensure_ascii=False)
 
     # 训练
+    # checkpoint 选点 monitor：与最终评估分支一致（M1=calibrated final，方案 §6.4/§6.5）
+    monitor_name = variant_monitor(args.variant, args.K)
+
     train_overrides = [
         f"scene={scene}",
         f"difficulty={protocol_cfg['difficulty']}",
@@ -231,7 +245,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"batch_size={args.batch_size}",
         f"num_workers={args.num_workers}",
         f"epochs={args.epochs}",
-        f"monitor=val_minFDE{args.K}",
+        f"monitor={monitor_name}",
         f"model.target.model.num_modes={args.K}",
         f"lr={args.lr}",
         f"weight_decay={args.weight_decay}",
@@ -239,6 +253,9 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         f"model_version={args.model_version_num}",
         f"clean_suffix={protocol_cfg['suffix']}",
     ]
+    # M1 等模型开关：VARIANTS 映射透传到 Hydra 配置（如 calibration=true）
+    for switch, value in VARIANTS[args.variant].items():
+        train_overrides.append(f"{switch}={str(value).lower()}")
     if args.smoke:
         train_overrides += [f"limit_train_batches={args.limit_batches}",
                             f"limit_val_batches={args.limit_batches}"]
@@ -264,10 +281,10 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
     if rc != 0:
         return {"scene": scene, "status": "train_failed", "dir": str(run_dir), "rc": rc}
 
-    # checkpoint：严格按 val_minFDE20 选点，不使用最后 epoch。
+    # checkpoint：严格按 monitor（M1=val_cal_minFDE20）选点，不使用最后 epoch。
     try:
         best_epoch, best_val, ckpt = select_best_checkpoint(
-            run_dir / "train", f"val_minFDE{args.K}"
+            run_dir / "train", monitor_name
         )
     except RuntimeError as error:
         return {
@@ -313,7 +330,7 @@ def run_one_scene(args, scene, protocol_cfg, manifest, gpu_env):
         "ckpt": str(ckpt),
         "best_epoch": best_epoch,
         "best_val": best_val,
-        "monitor": f"val_minFDE{args.K}",
+        "monitor": variant_monitor(args.variant, args.K),
         "K": args.K,
         "test_difficulties": test_difficulties,
         "evaluations": evaluations,
@@ -357,7 +374,7 @@ def main():
         raise SystemExit("TrajGap-Bench 正式重训协议固定 K=20")
 
     # model_version 标签（仅 output 命名）；模型开关由 VARIANTS 唯一映射。
-    args.model_version_num = {"M0": "0"}[args.variant]
+    args.model_version_num = {v: str(i) for i, v in enumerate(VARIANTS)}[args.variant]
 
     protocol_cfg = PROTOCOLS[args.protocol]
     if args.protocol != "mixed-direct":

@@ -20,6 +20,9 @@ train_difficulties: [Mixed]
 val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
+# checkpoint 选点：M0 监控 raw mode-query minFDE20；M1 监控 calibrated final
+# minFDE20（与训练损失、正式评估同一分支，方案 §6.4/§6.5 路径一致性）。
+# M1 训练命令覆盖 monitor=val_cal_minFDE20。
 monitor: val_minFDE20
 save_top_k: 1
 
@@ -60,6 +63,10 @@ test: false
 
 # 模型版本标签（仅用于 output 命名）：0/1/2 对应 M0/M1/M2
 model_version: '0'
+
+# M1：自然缺失证据条件化输出校准开关（方案 §6）。默认 false=M0 原路径；
+# 训练 M1 时覆盖 calibration=true。raw/calibrated 两套输出始终并存。
+calibration: false
 
 # TrajImpute 原始评估脚本使用 best-of-20；该覆盖只作用于 direct 配置，
 # 历史 ETH/UCY train_adapt 配置保持 K=6。

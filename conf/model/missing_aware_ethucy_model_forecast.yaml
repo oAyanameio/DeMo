@@ -17,6 +17,10 @@ target:
     obs_len: 8
     # 主链裁定（2026-09-12）：编码器固定原版单向，与 trajimpute 主配置同步；无须区分单双向。
     bimamba: ${bimamba}
+    # M1：自然缺失证据条件化输出校准（方案 §6，默认关闭=M0）
+    calibration: ${calibration}
+    calibration_hidden_dim: 32
+    calibration_max_log: 2.0
   pretrained_weights: ${pretrained_weights}
   lr: ${lr}
   weight_decay: ${weight_decay}
