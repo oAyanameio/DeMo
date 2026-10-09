@@ -358,7 +358,8 @@ def test_checkpoint_calibration_mismatch_rejected():
     import tempfile, os
 
     class _TD:
-        """最小 stub：只暴露 time_decoder.num_modes 与参数字典。"""
+        """最小 stub：暴露 time_decoder.num_modes，load_state_dict 按
+        模型实际参数与入参 state_dict 真实计算 missing/unexpected。"""
         def __init__(self, calibration: bool):
             import torch.nn as nn
             self.time_decoder = type("TD", (), {"num_modes": 20})()
@@ -367,8 +368,14 @@ def test_checkpoint_calibration_mismatch_rejected():
             self._lin = nn.Linear(4, 4)
 
         def load_state_dict(self, sd, strict=False):
-            result = type("R", (), {"missing_keys": [], "unexpected_keys": []})()
-            return result.missing_keys, result.unexpected_keys
+            expected = {"_lin.weight", "_lin.bias"}
+            if hasattr(self, "calibration_head"):
+                expected |= {
+                    f"calibration_head.{k}"
+                    for k in self.calibration_head.state_dict().keys()
+                }
+            provided = set(sd.keys())
+            return sorted(expected - provided), sorted(provided - expected)
 
     with tempfile.TemporaryDirectory() as td:
         p = os.path.join(td, "m0.ckpt")
@@ -398,6 +405,74 @@ def test_checkpoint_calibration_mismatch_rejected():
         }}, p3)
         with pytest.raises(ValueError, match="不完整"):
             mod.load_checkpoint(_TD(calibration=True), p3)
+
+
+def test_checkpoint_backbone_missing_rejected():
+    """主干参数缺失/多余：拒绝加载（残缺模型不得标成本实验评估）。"""
+    import importlib.util
+    path = REPO / "scripts" / "结果分析" / "evaluate_trajimpute_direct.py"
+    spec = importlib.util.spec_from_file_location("eval_mod", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    import tempfile, os
+
+    class _Backbone:
+        def __init__(self):
+            import torch.nn as nn
+            self.time_decoder = type("TD", (), {"num_modes": 20})()
+            self._lin = nn.Linear(4, 4)
+
+        def load_state_dict(self, sd, strict=False):
+            expected = {"_lin.weight", "_lin.bias"}
+            provided = set(sd.keys())
+            return sorted(expected - provided), sorted(provided - expected)
+
+    with tempfile.TemporaryDirectory() as td:
+        # 缺主干参数（_lin.bias 丢失）
+        p = os.path.join(td, "backbone_missing.ckpt")
+        torch.save({"state_dict": {"net._lin.weight": torch.zeros(4, 4)}}, p)
+        with pytest.raises(ValueError, match="主干参数与模型不匹配"):
+            mod.load_checkpoint(_Backbone(), p)
+        # 多余未知参数
+        p2 = os.path.join(td, "backbone_extra.ckpt")
+        torch.save({"state_dict": {
+            "net._lin.weight": torch.zeros(4, 4),
+            "net._lin.bias": torch.zeros(4),
+            "net.unknown_module.weight": torch.zeros(2, 2),
+        }}, p2)
+        with pytest.raises(ValueError, match="主干参数与模型不匹配"):
+            mod.load_checkpoint(_Backbone(), p2)
+
+
+@pytest.mark.skipif(not GPU, reason="需要 GPU（Mamba CUDA）")
+def test_predict_uses_calibrated_final_output():
+    """predict() 推理路径：轨迹用 new_y_hat，概率用 new_pi_cal（无校准回退 new_pi）。"""
+    from src.model.forecasting_module import ForecastingLightningModule
+    torch.manual_seed(2024)
+    batch = _realistic_batch(device="cuda")
+    lm = ForecastingLightningModule(
+        model={"type": "TrajectoryForecaster", "embed_dim": 128, "future_steps": 12,
+               "num_modes": 6, "dt": 0.4, "obs_len": 8, "calibration": True},
+        lr=1e-3, warmup_epochs=5, epochs=1)
+    lm = lm.cuda().eval()
+    with torch.no_grad():
+        # 随机化校准头使 cal != raw，验证 predict 真的走校准分支
+        for p in lm.net.calibration_head.parameters():
+            p.copy_(torch.randn_like(p) * 0.5)
+        batch_list = [{k: v[i:i + 1] for k, v in batch.items()} for i in (1, 2)]
+        preds, probs = lm.predict(batch_list)
+        out = lm.net(batch_list[0])
+        # 样本 1/2 有缺失（missing_ratio>0）：随机化校准头后 cal != raw。
+        # format_data 返回 softmax 后概率：predict 的概率应等于
+        # softmax(new_pi_cal)（而非 softmax(new_pi)）
+        assert int(batch["missing_count"][1]) > 0
+        prob_from_forward = torch.softmax(out["new_pi_cal"][0].double(), dim=-1).cpu()
+        assert torch.allclose(probs[0], prob_from_forward, atol=1e-5), \
+            "predict() 未使用 calibrated 概率"
+        # 且确实与 raw 概率不同（排除恒等映射假阳性）
+        prob_raw = torch.softmax(out["new_pi"][0].double(), dim=-1).cpu()
+        assert not torch.allclose(probs[0], prob_raw, atol=1e-6), \
+            "高缺失样本校准头已随机化但 predict 仍返回 raw 概率（回退逻辑错误）"
 
 
 def test_evaluator_evidence_grouping():

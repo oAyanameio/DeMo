@@ -76,13 +76,24 @@ class ForecastingLightningModule(pl.LightningModule):
         return self.net(data)
 
     def predict(self, data):
+        """推理入口：与 trainer.test_step / direct evaluator 同一分支。
+
+        轨迹优先 new_y_hat；概率优先 calibrated new_pi_cal（M1），
+        无校准输出时回退 new_pi（M0/旧模型），再回退 mode-query pi。
+        """
         predictions = []
         probs = []
         for i in range(len(data)):
             cur_data = data[i]
             out = self(cur_data)
+            y_hat = out.get("new_y_hat")
+            if y_hat is None:
+                y_hat = out["y_hat"]
+            pi = out.get("new_pi_cal")
+            if pi is None:
+                pi = out.get("new_pi", out["pi"])
             prediction, prob = self.submission_handler.format_data(
-                cur_data, out["y_hat"], out["pi"], inference=True)
+                cur_data, y_hat, pi, inference=True)
             predictions.append(prediction)
             probs.append(prob)
 

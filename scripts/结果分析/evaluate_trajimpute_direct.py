@@ -91,6 +91,14 @@ def load_checkpoint(model, ckpt_path):
                 f"多余 {sorted(cal_keys - expected_keys)}（{ckpt_path}）"
             )
     missing, unexpected = model.load_state_dict(cleaned, strict=False)
+    # 主干完整性：legacy 键迁移已由 _load_from_state_dict 处理，正常
+    # checkpoint 加载后 missing/unexpected 应为空；非空说明主干结构错配
+    # （错 revision / 错模型配置），静默继续会把残缺模型的结果标成本实验。
+    if missing or unexpected:
+        raise ValueError(
+            f"checkpoint 主干参数与模型不匹配: "
+            f"missing={sorted(missing)[:10]} unexpected={sorted(unexpected)[:10]}（{ckpt_path}）"
+        )
     return missing, unexpected
 
 
