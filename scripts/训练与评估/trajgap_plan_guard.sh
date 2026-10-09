@@ -1,21 +1,28 @@
 #!/bin/bash
-# trajgap_plan 链守护臂：链 bash 被外源信号杀掉时自动重拉（断点续训由
-# runner 的 last.ckpt 逻辑承担）；见 CHAIN_DONE 标记后自灭。
-# pgrep 锚定完整脚本路径（教训：宽松子串会匹配空，误判链死造成双写）。
+# trajgap_plan 双臂守护（2026-10-09 拆分版）：某臂进程消失且未写
+# ARM_DONE 时重拉该臂。重拉幂等性：M0 断点续训由 runner last.ckpt
+# 承担；marker 互等保证 M1 只在两臂 M0 都完成后启动。
 GUARD_LOG=/home/lbh/DeMo/outputs/trajgap_plan/guard.log
 CHAIN=/home/lbh/DeMo/scripts/训练与评估/trajgap_plan_chain.sh
-DONE_MARKER=/home/lbh/DeMo/outputs/trajgap_plan/chain_M1.log
+PLAN=/home/lbh/DeMo/outputs/trajgap_plan
 
 while true; do
     sleep 300
-    if grep -q "CHAIN_DONE" "$DONE_MARKER" 2>/dev/null; then
-        echo "$(date +%F_%T) guard: CHAIN_DONE, exit" >> "$GUARD_LOG"
+    for arm in gpu3 gpu2; do
+        done_marker=$PLAN/chain_${arm}.log
+        if grep -q "ARM_DONE ${arm}" "$done_marker" 2>/dev/null; then
+            continue  # 该臂已完成
+        fi
+        if pgrep -f "bash ${CHAIN} ${arm}" > /dev/null 2>&1 \
+           || pgrep -f "/bin/bash ${CHAIN} ${arm}" > /dev/null 2>&1; then
+            continue  # 该臂活着
+        fi
+        echo "$(date +%F_%T) guard: arm ${arm} dead, relaunch" >> "$GUARD_LOG"
+        setsid -f "$CHAIN" "$arm" < /dev/null > /dev/null 2>&1
+    done
+    if grep -q "ARM_DONE gpu3" "$PLAN/chain_gpu3.log" 2>/dev/null \
+       && grep -q "ARM_DONE gpu2" "$PLAN/chain_gpu2.log" 2>/dev/null; then
+        echo "$(date +%F_%T) guard: all arms done, exit" >> "$GUARD_LOG"
         exit 0
-    fi
-    if pgrep -f "bash ${CHAIN}" > /dev/null 2>&1 || pgrep -f "/bin/bash ${CHAIN}" > /dev/null 2>&1; then
-        :  # 链活着，不干预
-    else
-        echo "$(date +%F_%T) guard: chain dead, relaunch" >> "$GUARD_LOG"
-        setsid -f "$CHAIN" < /dev/null > /dev/null 2>&1
     fi
 done
