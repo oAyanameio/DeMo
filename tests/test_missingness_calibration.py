@@ -337,8 +337,8 @@ def test_runner_monitor_and_eval_variant_mapping():
     spec = importlib.util.spec_from_file_location("runner_mod", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert mod.variant_monitor("M0", 20) == "val_minFDE20"
-    assert mod.variant_monitor("M1", 20) == "val_cal_minFDE20"
+    assert mod.variant_monitor("M0", 20) == "val_new_b-minFDE20"
+    assert mod.variant_monitor("M1", 20) == "val_cal_b-minFDE20"
     assert mod.VARIANTS["M1"] == {"calibration": True}
     # 评估入口同映射
     path2 = REPO / "scripts" / "结果分析" / "evaluate_trajimpute_direct.py"
@@ -377,14 +377,27 @@ def test_checkpoint_calibration_mismatch_rejected():
         with pytest.raises(ValueError, match="calibration"):
             mod.load_checkpoint(_TD(calibration=True), p)
         p2 = os.path.join(td, "m1.ckpt")
-        torch.save({"state_dict": {"net._lin.weight": torch.zeros(4, 4),
-                                   "net._lin.bias": torch.zeros(4),
-                                   "net.calibration_head.weight": torch.zeros(1, 5)}}, p2)
+        torch.save({"state_dict": {
+            "net._lin.weight": torch.zeros(4, 4),
+            "net._lin.bias": torch.zeros(4),
+            "net.calibration_head.weight": torch.zeros(1, 5),
+            "net.calibration_head.bias": torch.zeros(1),
+        }}, p2)
         with pytest.raises(ValueError, match="calibration"):
             mod.load_checkpoint(_TD(calibration=False), p2)
         # 匹配时不抛错
         m, u = mod.load_checkpoint(_TD(calibration=True), p2)
         assert m == [] and u == []
+        # 部分校准参数：完整性校验拒绝（缺失参数不得静默留在零初始化）
+        p3 = os.path.join(td, "m1_partial.ckpt")
+        torch.save({"state_dict": {
+            "net._lin.weight": torch.zeros(4, 4),
+            "net._lin.bias": torch.zeros(4),
+            "net.calibration_head.weight": torch.zeros(1, 5),
+            # 故意缺 bias
+        }}, p3)
+        with pytest.raises(ValueError, match="不完整"):
+            mod.load_checkpoint(_TD(calibration=True), p3)
 
 
 def test_evaluator_evidence_grouping():

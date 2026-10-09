@@ -20,10 +20,10 @@ train_difficulties: [Mixed]
 val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
-# checkpoint 选点：M0 监控 raw mode-query minFDE20；M1 监控 calibrated final
-# minFDE20（与训练损失、正式评估同一分支，方案 §6.4/§6.5 路径一致性）。
-# M1 训练命令覆盖 monitor=val_cal_minFDE20。
-monitor: val_minFDE20
+# checkpoint 选点：按方案 §2，最终输出分支的 b-minFDE20（对概率校准敏感）。
+# M0 监控 val_new_b-minFDE20（raw final），M1 覆盖为 val_cal_b-minFDE20
+# （calibrated final）——runner variant_monitor() 自动映射，此处为 M0 默认。
+monitor: val_new_b-minFDE20
 save_top_k: 1
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute

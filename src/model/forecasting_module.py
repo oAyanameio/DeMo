@@ -196,6 +196,18 @@ class ForecastingLightningModule(pl.LightningModule):
     def validation_step(self, data, batch_idx):
         out = self(data)
         _, loss_dict = self.cal_loss(out, data)
+        # 校准敏感验证信号（方案 §6.4）：最终分支 Laplace NLL——M1 下
+        # cal_loss 内部已用 calibrated 输出计算，M0 下即 raw final NLL。
+        for key in ("laplace_loss_new", "reg_loss_new_pi"):
+            if key in loss_dict:
+                self.log(
+                    f"val_{key}",
+                    loss_dict[key],
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=1,
+                    sync_dist=True,
+                )
         metrics = self.val_metrics(out, data['target'][:, 0])
         metrics_cal = None
         if out['new_y_hat'] is not None:

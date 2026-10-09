@@ -65,7 +65,7 @@ def load_checkpoint(model, ckpt_path):
     state = ckpt.get("state_dict", ckpt)
     cleaned = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
     # 强校验：calibration 开关与 checkpoint 参数必须匹配，防止 M0/M1 静默错配
-    cal_keys = [k for k in cleaned if k.startswith("calibration_head.")]
+    cal_keys = {k for k in cleaned if k.startswith("calibration_head.")}
     expects_cal = hasattr(model, "calibration_head")
     if expects_cal and not cal_keys:
         raise ValueError(
@@ -77,6 +77,19 @@ def load_checkpoint(model, ckpt_path):
             f"variant=M0 要求原始模型，但 checkpoint 含 calibration_head 参数（{len(cal_keys)} 个）: "
             f"{ckpt_path}（M1 checkpoint 必须用 --variant M1 评估）"
         )
+    if expects_cal:
+        # 完整性：部分加载会让缺失参数留在零初始化，静默退化为 raw 语义。
+        # cleaned 键已剥 net. 前缀（如 calibration_head.tau_branch.0.weight），
+        # state_dict 键相对模块（tau_branch.0.weight），比较前补齐前缀。
+        expected_keys = {
+            f"calibration_head.{k}"
+            for k in model.calibration_head.state_dict().keys()
+        }
+        if cal_keys != expected_keys:
+            raise ValueError(
+                f"checkpoint 校准参数不完整: 缺失 {sorted(expected_keys - cal_keys)}，"
+                f"多余 {sorted(cal_keys - expected_keys)}（{ckpt_path}）"
+            )
     missing, unexpected = model.load_state_dict(cleaned, strict=False)
     return missing, unexpected
 

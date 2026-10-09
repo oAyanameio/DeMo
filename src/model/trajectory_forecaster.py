@@ -320,6 +320,13 @@ class TrajectoryForecaster(nn.Module):
 
         evidence 只来自 focal(=actor 0) 历史 mask 派生字段；
         all-valid 样本 missing_ratio=0 -> 恒等映射（log_tau=log_scale=0）。
+
+        边界（温度校准的数学性质）：logits/τ 不改变 mode 排序，因此
+        同一 checkpoint 上 raw/cal 的 ADE@1/FDE@1/MR/min* 逐位相同；
+        推理期直接变化的只有 b-minFDE（Brier 项用概率值）、mode entropy
+        与 scale。M1 对排序/top-1 的改善只能来自训练期效应（校准后的
+        CE/Laplace 梯度改变 logits 与轨迹头的联合学习），跨训练比较
+        （M1 ckpt vs M0 ckpt）才有意义。
         """
         focal_valid = data["x_valid_mask"][:, 0]            # [B, T]
         valid_ratio = focal_valid.float().mean(dim=-1)      # [B]
