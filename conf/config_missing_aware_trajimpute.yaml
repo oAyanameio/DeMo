@@ -61,7 +61,7 @@ limit_test_batches:
 log_model: all
 test: false
 
-# 模型版本标签（仅用于 output 命名）：0/1/2 对应 M0/M1/M2
+# 模型版本标签（仅用于 output 命名）：0/1 对应 M0/M1
 model_version: '0'
 
 # M1：自然缺失证据条件化输出校准开关（方案 §6）。默认 false=M0 原路径；

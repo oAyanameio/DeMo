@@ -233,7 +233,9 @@ def main():
         missing, unexpected = load_checkpoint(model, args.checkpoint)
         ckpt_info = {
             "path": str(args.checkpoint),
-            "missing_keys": [k for k in missing if "gap_embed" not in k],
+            # 主干完整性校验已前置（load_checkpoint 内非空即抛错），
+            # 此处理论上恒为空列表；保留字段以防御性留档。
+            "missing_keys": list(missing),
             "unexpected_keys": list(unexpected)[:20],
             "calibration_enabled": bool(VARIANTS[args.variant].get("calibration")),
             "calibration_params_loaded": (

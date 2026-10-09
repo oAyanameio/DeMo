@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """校正版:对比 uni vs bi 训练 run(取最新有 metrics 者)的 resolved config。
 
-2026-09 扩展：追加 Missing-Aware M0/M1/M2 配置一致性检查（不改变原有
+2026-10 更新：主链配置检查对齐 M0/M1 双臂（monitor=val_new_b-minFDE20）（不改变原有
 uni/bi 检查逻辑；无 outputs 历史 run 依赖，独立可运行）。
 """
 import yaml
@@ -78,7 +78,7 @@ else:
     c = _yaml.safe_load(path.read_text())
     expect = {
         "data_root": "/home/lbh/TrajImpute/dataset/TrajImpute",
-        "monitor": "val_minFDE20",
+        "monitor": "val_new_b-minFDE20",
         "bimamba": False,
         "num_modes-check": c["model"]["target"]["model"]["num_modes"] == 20,
     }

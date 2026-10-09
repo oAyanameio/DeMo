@@ -1,4 +1,4 @@
-"""Generate an editable draw.io architecture figure for DeMo's forecaster."""
+"""Generate an editable draw.io figure for DeMo's actor-only encoder."""
 
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -6,63 +6,48 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 DRAWIO = ROOT / "docs" / "figures" / "demo_trajectory_forecaster_architecture.drawio"
-WIDTH, HEIGHT = 2160, 960
+WIDTH, HEIGHT = 1540, 760
 
 INK = "#263746"
 MUTED = "#657786"
-EDGE = "#536878"
+ARROW = "#536878"
 PANEL = "#F7F9FB"
 PANEL_STROKE = "#D6DEE6"
-INPUT = "#E9F2F8"
+INPUT = "#EAF2F8"
 INPUT_STROKE = "#9DB8CC"
-STATE = "#EAF2FA"
-STATE_STROKE = "#82A9D0"
-MODE = "#FBF3E4"
-MODE_STROKE = "#D7B66F"
-HYBRID = "#F1ECF8"
-HYBRID_STROKE = "#A895C6"
-OUTPUT = "#EAF4EF"
-OUTPUT_STROKE = "#8BB39C"
+TEMPORAL = "#EEF4FA"
+TEMPORAL_STROKE = "#91ACCA"
+SCENE = "#F1EDF8"
+SCENE_STROKE = "#AD9BC8"
+
+panels = []
+nodes = []
+edges = []
 
 
-root = ET.Element("mxfile", {
-    "host": "app.diagrams.net",
-    "agent": "DeMo architecture figure generator",
-    "version": "24.7.17",
-    "type": "device",
-})
-diagram = ET.SubElement(root, "diagram", {
-    "id": "demo-trajectory-forecaster",
-    "name": "DeMo Trajectory Forecaster",
-})
-model = ET.SubElement(diagram, "mxGraphModel", {
-    "dx": str(WIDTH), "dy": str(HEIGHT), "grid": "1", "gridSize": "10",
-    "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1",
-    "fold": "1", "page": "1", "pageScale": "1",
-    "pageWidth": str(WIDTH), "pageHeight": str(HEIGHT),
-    "math": "0", "shadow": "0",
-})
-cells = ET.SubElement(model, "root")
-ET.SubElement(cells, "mxCell", {"id": "0"})
-ET.SubElement(cells, "mxCell", {"id": "1", "parent": "0"})
+def add_node(cell_id, label, x, y, w, h, style):
+    nodes.append((cell_id, label, x, y, w, h, style))
 
 
-def vertex(cell_id, label, x, y, w, h, style, parent="1"):
-    cell = ET.SubElement(cells, "mxCell", {
-        "id": cell_id, "value": label, "style": style,
-        "vertex": "1", "parent": parent,
-    })
-    ET.SubElement(cell, "mxGeometry", {
-        "x": str(x), "y": str(y), "width": str(w), "height": str(h),
-        "as": "geometry",
-    })
+def add_edge(cell_id, source, target, color=ARROW, dashed=False,
+             source_xy="0.5,1", target_xy="0.5,0", waypoints=None):
+    style = (
+        "edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;"
+        "jettySize=auto;html=1;"
+        f"strokeColor={color};strokeWidth=1.6;endArrow=block;endFill=1;"
+        f"exitX={source_xy.split(',')[0]};exitY={source_xy.split(',')[1]};"
+        f"entryX={target_xy.split(',')[0]};entryY={target_xy.split(',')[1]};"
+    )
+    if dashed:
+        style += "dashed=1;dashPattern=6 4;"
+    edges.append((cell_id, source, target, style, waypoints or []))
 
 
-def panel_style(fill=PANEL, stroke=PANEL_STROKE):
+def panel_style(fill, stroke):
     return (
         "rounded=1;arcSize=12;whiteSpace=wrap;html=1;"
-        f"fillColor={fill};strokeColor={stroke};strokeWidth=1.4;"
-        f"fontColor={INK};fontFamily=Arial;fontSize=16;fontStyle=1;"
+        f"fillColor={fill};strokeColor={stroke};strokeWidth=1.3;"
+        f"fontColor={INK};fontFamily=Arial;fontSize=15;fontStyle=1;"
         "align=left;verticalAlign=top;spacingTop=14;spacingLeft=16;"
     )
 
@@ -77,191 +62,154 @@ def card_style(fill="#FFFFFF", stroke="#B8C5D0", size=14, bold=True):
     )
 
 
-def note_style(color=MUTED, size=11, align="left"):
+def text_style(color=MUTED, size=12, align="left", bold=False):
     return (
         "text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;"
         f"fontColor={color};fontFamily=Arial;fontSize={size};"
-        f"align={align};verticalAlign=middle;spacing=0;"
+        f"fontStyle={1 if bold else 0};align={align};verticalAlign=middle;spacing=0;"
     )
 
 
-def edge(cell_id, source, target, color=EDGE, dashed=False, source_xy="0.5,1", target_xy="0.5,0"):
-    style = (
-        "edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;"
-        "jettySize=auto;html=1;"
-        f"strokeColor={color};strokeWidth=1.6;endArrow=block;endFill=1;"
-        f"exitX={source_xy.split(',')[0]};exitY={source_xy.split(',')[1]};"
-        f"entryX={target_xy.split(',')[0]};entryY={target_xy.split(',')[1]};"
-    )
-    if dashed:
-        style += "dashed=1;dashPattern=6 4;"
+# Major encoder stages.
+panels.extend([
+    ("panel_input", "INPUT & MOTION FEATURES", 30, 125, 330, 535,
+     panel_style(INPUT, INPUT_STROKE)),
+    ("panel_temporal", "ACTOR-WISE TEMPORAL ENCODING", 390, 125, 610, 535,
+     panel_style(TEMPORAL, TEMPORAL_STROKE)),
+    ("panel_scene", "SCENE CONTEXT ENCODING", 1030, 125, 480, 535,
+     panel_style(SCENE, SCENE_STROKE)),
+])
+
+# Input and motion feature construction.
+add_node("history", "Observed trajectory\nhistory", 65, 235, 120, 72,
+         card_style(INPUT, INPUT_STROKE))
+add_node("validity", "History validity\nmask", 205, 235, 120, 72,
+         card_style(INPUT, INPUT_STROKE))
+add_node("motion", "Motion feature construction\nRelative displacement · velocity change · validity",
+         65, 410, 260, 92, card_style("#FFFFFF", INPUT_STROKE, 13))
+add_node("actor_metadata", "Actor metadata\nCenter position · heading · actor type",
+         65, 565, 260, 68, card_style("#FFFFFF", INPUT_STROKE, 12, False))
+
+# Per-actor temporal encoding and metadata fusion.
+add_node("history_projection", "History feature projection\nMLP", 430, 245, 180, 78,
+         card_style("#FFFFFF", TEMPORAL_STROKE))
+add_node("temporal_mamba", "Temporal sequence encoder\nMamba", 670, 245, 250, 78,
+         card_style(TEMPORAL, TEMPORAL_STROKE))
+add_node("last_state", "Last valid state selection", 670, 365, 250, 70,
+         card_style("#FFFFFF", TEMPORAL_STROKE))
+add_node("type_embedding", "Actor-type embedding", 430, 480, 180, 68,
+         card_style("#FFFFFF", TEMPORAL_STROKE, 13))
+add_node("position_embedding", "Position & heading projection\nMLP", 430, 565, 180, 68,
+         card_style("#FFFFFF", TEMPORAL_STROKE, 12))
+add_node("actor_fusion_type", "Feature addition", 670, 480, 250, 62,
+         card_style(TEMPORAL, TEMPORAL_STROKE, 13))
+add_node("actor_fusion_position", "Actor representation fusion", 670, 565, 250, 68,
+         card_style(TEMPORAL, TEMPORAL_STROKE, 13))
+
+# Scene-level actor interaction and encoder output.
+add_node("scene_transformer", "Scene interaction\nTransformer", 1090, 300, 360, 105,
+         card_style(SCENE, SCENE_STROKE, 15))
+add_node("scene_mask", "Actor validity mask", 1090, 235, 170, 44,
+         card_style("#FFFFFF", SCENE_STROKE, 11, False))
+add_node("scene_encoding", "Scene-context actor representations", 1090, 485, 360, 82,
+         card_style("#FFFFFF", SCENE_STROKE, 14))
+
+# Data flow through history encoding, actor metadata fusion, and scene interaction.
+add_edge("e_history_motion", "history", "motion", source_xy="0.5,1", target_xy="0.3,0")
+add_edge("e_validity_motion", "validity", "motion", source_xy="0.5,1", target_xy="0.7,0")
+add_edge("e_motion_projection", "motion", "history_projection",
+         source_xy="1,0.5", target_xy="0,0.5")
+add_edge("e_projection_mamba", "history_projection", "temporal_mamba",
+         source_xy="1,0.5", target_xy="0,0.5")
+add_edge("e_mamba_last", "temporal_mamba", "last_state")
+add_edge("e_last_actor_fusion", "last_state", "actor_fusion_type")
+add_edge("e_type_fusion", "type_embedding", "actor_fusion_type",
+         source_xy="1,0.5", target_xy="0,0.5")
+add_edge("e_fusion_position", "actor_fusion_type", "actor_fusion_position")
+add_edge("e_position_fusion", "position_embedding", "actor_fusion_position",
+         source_xy="1,0.5", target_xy="0,0.5")
+add_edge("e_metadata_type", "actor_metadata", "type_embedding",
+         source_xy="1,0.25", target_xy="0,0.5")
+add_edge("e_metadata_position", "actor_metadata", "position_embedding",
+         source_xy="1,0.75", target_xy="0,0.5")
+add_edge("e_actor_scene", "actor_fusion_position", "scene_transformer",
+         source_xy="1,0.5", target_xy="0,0.75")
+add_edge("e_mask_scene", "validity", "scene_mask", color=SCENE_STROKE,
+         dashed=True, source_xy="1,0.5", target_xy="0.5,0",
+         waypoints=[(345, 271), (345, 170), (1175, 170)])
+add_edge("e_scene_mask_transformer", "scene_mask", "scene_transformer",
+         color=SCENE_STROKE, dashed=True, source_xy="0.5,1", target_xy="0.5,0")
+add_edge("e_scene_output", "scene_transformer", "scene_encoding")
+
+
+root = ET.Element("mxfile", {
+    "host": "app.diagrams.net",
+    "agent": "DeMo architecture figure generator",
+    "version": "24.7.17",
+    "type": "device",
+})
+diagram = ET.SubElement(root, "diagram", {
+    "id": "demo-actor-only-encoder",
+    "name": "DeMo Encoder",
+})
+model = ET.SubElement(diagram, "mxGraphModel", {
+    "dx": str(WIDTH), "dy": str(HEIGHT), "grid": "1", "gridSize": "10",
+    "guides": "1", "tooltips": "1", "connect": "1", "arrows": "1",
+    "fold": "1", "page": "1", "pageScale": "1",
+    "pageWidth": str(WIDTH), "pageHeight": str(HEIGHT),
+    "math": "0", "shadow": "0",
+})
+cells = ET.SubElement(model, "root")
+ET.SubElement(cells, "mxCell", {"id": "0"})
+ET.SubElement(cells, "mxCell", {"id": "1", "parent": "0"})
+
+
+def add_vertex(cell_id, label, x, y, w, h, style):
+    cell = ET.SubElement(cells, "mxCell", {
+        "id": cell_id, "value": label, "style": style,
+        "vertex": "1", "parent": "1",
+    })
+    ET.SubElement(cell, "mxGeometry", {
+        "x": str(x), "y": str(y), "width": str(w), "height": str(h),
+        "as": "geometry",
+    })
+
+
+for panel in panels:
+    add_vertex(*panel)
+
+for cell_id, source, target, style, waypoints in edges:
     cell = ET.SubElement(cells, "mxCell", {
         "id": cell_id, "style": style, "edge": "1", "parent": "1",
         "source": source, "target": target,
     })
-    ET.SubElement(cell, "mxGeometry", {"relative": "1", "as": "geometry"})
+    geometry = ET.SubElement(cell, "mxGeometry", {"relative": "1", "as": "geometry"})
+    if waypoints:
+        points = ET.SubElement(geometry, "Array", {"as": "points"})
+        for x, y in waypoints:
+            ET.SubElement(points, "mxPoint", {"x": str(x), "y": str(y)})
 
+for node in nodes:
+    add_vertex(*node)
 
-# Background panels are placed first so connectors and modules remain editable.
-vertex("panel_input", "1  INPUT & HISTORY ENCODING", 25, 112, 385, 800,
-       panel_style(INPUT, INPUT_STROKE))
-vertex("panel_context", "2  SCENE CONTEXT ENCODER", 435, 112, 315, 770,
-       panel_style())
-vertex("panel_decoder", "3  DECOUPLED QUERY DECODER", 775, 112, 570, 770,
-       panel_style())
-vertex("panel_hybrid", "4  HYBRID COUPLING", 1370, 112, 425, 770,
-       panel_style(HYBRID, HYBRID_STROKE))
-vertex("panel_output", "5  PREDICTIONS", 1820, 112, 315, 770,
-       panel_style(OUTPUT, OUTPUT_STROKE))
+add_vertex(
+    "title", "DeMo Actor-Only Encoder Architecture", 30, 22, 1300, 42,
+    text_style(INK, 23, bold=True),
+)
+add_vertex(
+    "subtitle", "History encoding → actor representation fusion → scene interaction",
+    32, 68, 1400, 28, text_style(MUTED, 13),
+)
+add_vertex(
+    "legend", "Solid arrows: feature flow     Dashed arrows: validity-mask control",
+    32, 685, 1000, 26, text_style(MUTED, 11),
+)
+add_vertex(
+    "scope_note", "Map-free actor-only encoder",
+    1080, 685, 420, 26, text_style(MUTED, 11, align="right"),
+)
 
-# Sub-lane backgrounds.
-vertex("lane_state", "STATE CONSISTENCY", 800, 190, 520, 270,
-       "rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#F5F9FD;"
-       f"strokeColor={STATE_STROKE};strokeWidth=1.2;dashed=1;dashPattern=6 4;"
-       f"fontColor={STATE_STROKE};fontFamily=Arial;fontSize=12;fontStyle=1;"
-       "align=left;verticalAlign=top;spacingTop=10;spacingLeft=12;")
-vertex("lane_mode", "MODE LOCALIZATION", 800, 490, 520, 300,
-       "rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFCF5;"
-       f"strokeColor={MODE_STROKE};strokeWidth=1.2;dashed=1;dashPattern=6 4;"
-       f"fontColor={MODE_STROKE};fontFamily=Arial;fontSize=12;fontStyle=1;"
-       "align=left;verticalAlign=top;spacingTop=10;spacingLeft=12;")
-
-# Input and agent-history path.
-vertex("history", "Observed actor histories\npositions  p<sub>t</sub>  +  validity mask  m<sub>t</sub>\n[B, N, L, 2] + [B, N, L]",
-       55, 205, 325, 88, card_style(INPUT, INPUT_STROKE, 13))
-vertex("motion", "Motion feature construction\n[Δp<sub>t</sub>, Δv<sub>t</sub>, m<sub>t</sub>] ∈ ℝ<sup>4</sup>\n[B, N, L, 4]",
-       55, 325, 325, 90, card_style())
-vertex("history_proj", "History projection\nMLP: 4 → 64 → 128",
-       55, 445, 325, 76, card_style())
-vertex("history_mamba", "Agent temporal encoder\nUni-Mamba × 4  ·  C = 128",
-       55, 550, 325, 82, card_style(STATE, STATE_STROKE))
-vertex("history_token", "Last valid hidden state\nactor tokens  H<sub>hist</sub> ∈ ℝ<sup>B×N×128</sup>",
-       55, 660, 325, 74, card_style())
-vertex("actor_meta", "Actor context metadata\ncenter + heading (cos θ, sin θ) + type",
-       55, 775, 325, 70, card_style("#FFFFFF", INPUT_STROKE, 12, False))
-
-# Scene context encoder.
-vertex("context_input", "History tokens + actor-type embedding",
-       465, 220, 255, 65, card_style())
-vertex("context_fusion", "Add projected center / heading\nMLP: 4 → 128",
-       465, 330, 255, 80, card_style())
-vertex("context_transformer", "Scene interaction\nTransformer blocks × 5\n8 heads · LayerNorm",
-       465, 465, 255, 110, card_style(INPUT, INPUT_STROKE, 13))
-vertex("scene_memory", "Scene memory  E\n[B, N, 128]  ·  actor-only",
-       465, 640, 255, 74, card_style(OUTPUT, OUTPUT_STROKE))
-vertex("context_mask_note", "Padding actors masked; focal actor is index 0.",
-       465, 740, 255, 32, note_style())
-
-# State-query branch.
-vertex("time_query", "Future time embeddings\nMLP: t → 64 → 128\nQ<sub>s</sub> ∈ ℝ<sup>B×T×C</sup>",
-       820, 245, 145, 100, card_style(STATE, STATE_STROKE, 12))
-vertex("state_cross", "Cross-attention × 2\n(query: future time; key/value: E)",
-       1000, 245, 145, 100, card_style(STATE, STATE_STROKE, 12))
-vertex("state_mamba", "Bi-Mamba × 2\nRMSNorm",
-       1000, 370, 145, 62, card_style(STATE, STATE_STROKE, 12))
-vertex("state_latent", "State features\nH<sub>s</sub> ∈ ℝ<sup>B×T×C</sup>",
-       1175, 350, 125, 78, card_style(STATE, STATE_STROKE, 12))
-
-# Mode-query branch.
-vertex("mode_query", "Focal scene token E<sub>0</sub>\nlearned mode queries\nK = 20",
-       820, 590, 145, 95, card_style(MODE, MODE_STROKE, 12))
-vertex("mode_cross", "Cross-attention × 3\n(query: modes; key/value: E)",
-       1000, 565, 145, 88, card_style(MODE, MODE_STROKE, 12))
-vertex("mode_self", "Mode self-attention × 3",
-       1000, 675, 145, 60, card_style(MODE, MODE_STROKE, 12))
-vertex("mode_latent", "Mode features\nH<sub>m</sub> ∈ ℝ<sup>B×K×C</sup>",
-       1175, 660, 125, 78, card_style(MODE, MODE_STROKE, 12))
-
-# Hybrid fusion and coupled representation refinement.
-vertex("hybrid_sum", "Hybrid query fusion\nH<sub>m</sub> ⊕ H<sub>s</sub> → [B, K, T, C]",
-       1410, 235, 345, 78, card_style(HYBRID, HYBRID_STROKE, 13))
-vertex("hybrid_cross", "Hybrid cross-attention × 3  (context: E)",
-       1410, 350, 345, 64, card_style())
-vertex("hybrid_joint", "Joint self-attention × 3",
-       1410, 445, 345, 64, card_style())
-vertex("hybrid_mode", "Mode-interaction self-attention × 3",
-       1410, 540, 345, 64, card_style())
-vertex("hybrid_mamba", "Coupled temporal Bi-Mamba × 2",
-       1410, 635, 345, 64, card_style())
-vertex("hybrid_head", "Coupled trajectory head\nmean + mode score + Laplace scale",
-       1410, 735, 345, 82, card_style(HYBRID, HYBRID_STROKE, 13))
-
-# Prediction heads and outputs.
-vertex("final_output", "FINAL MULTIMODAL FORECAST\nŶ ∈ ℝ<sup>B×K×T×2</sup>\nπ ∈ ℝ<sup>B×K</sup>  ·  scales b",
-       1850, 230, 255, 120, card_style(OUTPUT, OUTPUT_STROKE, 14))
-vertex("mode_aux", "Mode trajectory head (auxiliary)\nŶ<sub>mode</sub>, π<sub>mode</sub>, b<sub>mode</sub>",
-       1850, 460, 255, 90, card_style("#FFFFFF", MODE_STROKE, 12, False))
-vertex("state_aux", "State forecast head (auxiliary)\nŶ<sub>state</sub> ∈ ℝ<sup>B×T×2</sup>",
-       1850, 625, 255, 90, card_style("#FFFFFF", STATE_STROKE, 12, False))
-vertex("neighbor_aux", "Neighbor prediction head\nother-agent trajectories (auxiliary)",
-       1850, 755, 255, 70, card_style("#FFFFFF", PANEL_STROKE, 11, False))
-
-# Optional missingness conditioning is deliberately not part of the default path.
-vertex("optional_gap", "Optional C-MAS-Δ\nmask + log-gap conditioning\n(replaces standard history Mamba only when enabled)",
-       55, 845, 325, 60,
-       "rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;"
-       f"strokeColor={MODE_STROKE};strokeWidth=1.3;dashed=1;dashPattern=6 4;"
-       f"fontColor={INK};fontFamily=Arial;fontSize=11;align=center;verticalAlign=middle;spacing=5;")
-vertex("shared_context_note", "Shared scene memory E is the key/value context for every cross-attention block.",
-       800, 825, 525, 30, note_style(MUTED, 10))
-
-# Connectors are inserted after background shapes and before foreground cards.
-for ident, source, target, color, dashed, source_xy, target_xy in [
-    ("e_history_motion", "history", "motion", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_motion_proj", "motion", "history_proj", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_proj_mamba", "history_proj", "history_mamba", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_mamba_token", "history_mamba", "history_token", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_token_context", "history_token", "context_input", EDGE, False, "1,0.5", "0,0.5"),
-    ("e_meta_fusion", "actor_meta", "context_fusion", EDGE, False, "1,0.2", "0,0.8"),
-    ("e_context_fusion", "context_input", "context_fusion", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_fusion_transformer", "context_fusion", "context_transformer", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_transformer_memory", "context_transformer", "scene_memory", EDGE, False, "0.5,1", "0.5,0"),
-    ("e_time_cross", "time_query", "state_cross", STATE_STROKE, False, "1,0.5", "0,0.5"),
-    ("e_state_cross_mamba", "state_cross", "state_mamba", STATE_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_state_latent", "state_mamba", "state_latent", STATE_STROKE, False, "1,0.5", "0,0.5"),
-    ("e_mode_cross", "mode_query", "mode_cross", MODE_STROKE, False, "1,0.5", "0,0.5"),
-    ("e_mode_self", "mode_cross", "mode_self", MODE_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_mode_latent", "mode_self", "mode_latent", MODE_STROKE, False, "1,0.5", "0,0.5"),
-    ("e_state_fusion", "state_latent", "hybrid_sum", STATE_STROKE, False, "1,0.5", "0,0.3"),
-    ("e_mode_fusion", "mode_latent", "hybrid_sum", MODE_STROKE, False, "1,0.5", "0,0.8"),
-    ("e_fusion_cross", "hybrid_sum", "hybrid_cross", HYBRID_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_hybrid_joint", "hybrid_cross", "hybrid_joint", HYBRID_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_hybrid_mode", "hybrid_joint", "hybrid_mode", HYBRID_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_hybrid_mamba", "hybrid_mode", "hybrid_mamba", HYBRID_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_hybrid_head", "hybrid_mamba", "hybrid_head", HYBRID_STROKE, False, "0.5,1", "0.5,0"),
-    ("e_final", "hybrid_head", "final_output", OUTPUT_STROKE, False, "1,0.35", "0,0.5"),
-    ("e_state_aux", "state_latent", "state_aux", STATE_STROKE, True, "1,1", "0,0.5"),
-    ("e_mode_aux", "mode_latent", "mode_aux", MODE_STROKE, True, "1,1", "0,0.5"),
-    ("e_neighbor_aux", "scene_memory", "neighbor_aux", MUTED, True, "1,1", "0,0.5"),
-    ("e_gap_optional", "optional_gap", "history_mamba", MODE_STROKE, True, "0.5,0", "0.5,1"),
-]:
-    edge(ident, source, target, color, dashed, source_xy, target_xy)
-
-# Header, compact legend, and figure note.
-vertex("title", "DeMo: Actor-Only Trajectory Forecasting Architecture",
-       28, 18, 1600, 42,
-       "text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;"
-       f"fontColor={INK};fontFamily=Arial;fontSize=24;fontStyle=1;align=left;verticalAlign=middle;")
-vertex("subtitle", "TrajectoryForecaster · map-free scene context · default setting: L = 8, T = 12, K = 20, C = 128",
-       30, 64, 1700, 28, note_style(MUTED, 13))
-vertex("legend", "Blue: state consistency     Amber: mode localization     Purple: hybrid coupling     Dashed outline / arrow: optional or auxiliary path",
-       30, 925, 1820, 24, note_style(MUTED, 11))
-vertex("figure_note", "Actor-only implementation; no HD-map or lane encoder.",
-       1690, 925, 445, 24, note_style(MUTED, 11, "right"))
-
-# Keep panels behind connectors and modules above connectors for clean routing.
-ordered_cells = list(cells)
-structural = [cell for cell in ordered_cells if cell.get("id") in {"0", "1"}]
-panels = [cell for cell in ordered_cells if (cell.get("id") or "").startswith("panel_")]
-connectors = [cell for cell in ordered_cells if cell.get("edge") == "1"]
-foreground = [cell for cell in ordered_cells
-              if cell not in structural and cell not in panels and cell not in connectors]
-for cell in ordered_cells:
-    cells.remove(cell)
-for cell in structural + panels + connectors + foreground:
-    cells.append(cell)
-
-ET.indent(root, space="  ")
 DRAWIO.parent.mkdir(parents=True, exist_ok=True)
+ET.indent(root, space="  ")
 ET.ElementTree(root).write(DRAWIO, encoding="utf-8", xml_declaration=True)
 print(DRAWIO)
