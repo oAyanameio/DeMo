@@ -78,7 +78,7 @@ else:
     c = _yaml.safe_load(path.read_text())
     expect = {
         "data_root": "/home/lbh/TrajImpute/dataset/TrajImpute",
-        "monitor": "val_new_b-minFDE20",
+        "monitor": "val_minFDE20",
         "bimamba": False,
         "num_modes-check": c["model"]["target"]["model"]["num_modes"] == 20,
     }
