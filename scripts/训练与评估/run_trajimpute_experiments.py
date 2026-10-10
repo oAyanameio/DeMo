@@ -184,16 +184,14 @@ def build_manifest(args, protocol_cfg):
 
 
 def variant_monitor(variant: str, K: int) -> str:
-    """checkpoint 选点 monitor：与最终评估分支一致，且对概率校准敏感。
+    """checkpoint 选点 monitor：恢复旧版正式 M0 协议（2026-10-10 裁定）。
 
-    minFDE20 对全部 K 条候选取 min，不响应概率排序与尺度（k=K 时
-    sort 重排不改候选集合），无法衡量校准效果；b-minFDE 的 Brier 项
-    直接响应概率质量。M0 用 raw final 分支、M1 用 calibrated final
-    分支的同一指标家族，保证两臂选点可比。
+    除优化器参数分组修复（c68336f）外，全部协议沿用旧版正式 M0：
+    选点 = 中间分支 val_minFDE20（mode-query 输出），与历史正式链
+    trajgap_bench_seed2024 完全同规。b-minFDE/NLL 等校准诊断曲线仍
+    并行记录，不进入选点。
     """
-    if VARIANTS[variant].get("calibration"):
-        return f"val_cal_b-minFDE{K}"
-    return f"val_new_b-minFDE{K}"
+    return f"val_minFDE{K}"
 
 
 def sh(cmd, log_path, env=None):

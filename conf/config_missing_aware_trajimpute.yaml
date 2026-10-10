@@ -20,10 +20,10 @@ train_difficulties: [Mixed]
 val_difficulties: [Mixed]
 train_sampling_scheme: natural
 train_sampling_seed: ${seed}
-# checkpoint 选点：按方案 §2，最终输出分支的 b-minFDE20（对概率校准敏感）。
-# M0 监控 val_new_b-minFDE20（raw final），M1 覆盖为 val_cal_b-minFDE20
-# （calibrated final）——runner variant_monitor() 自动映射，此处为 M0 默认。
-monitor: val_new_b-minFDE20
+# checkpoint 选点：恢复旧版正式 M0 协议（2026-10-10 裁定）——除优化器修复外
+# 全部照旧：选点=中间分支 val_minFDE20（mode-query 输出），与历史正式链同规。
+# b-minFDE/NLL 等校准诊断曲线仍并行记录，不进入选点。
+monitor: val_minFDE20
 save_top_k: 1
 
 data_root: /home/lbh/TrajImpute/dataset/TrajImpute

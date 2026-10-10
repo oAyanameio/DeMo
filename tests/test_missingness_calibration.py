@@ -337,8 +337,8 @@ def test_runner_monitor_and_eval_variant_mapping():
     spec = importlib.util.spec_from_file_location("runner_mod", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert mod.variant_monitor("M0", 20) == "val_new_b-minFDE20"
-    assert mod.variant_monitor("M1", 20) == "val_cal_b-minFDE20"
+    assert mod.variant_monitor("M0", 20) == "val_minFDE20"
+    assert mod.variant_monitor("M1", 20) == "val_minFDE20"  # 旧版同规统一选点
     assert mod.VARIANTS["M1"] == {"calibration": True}
     # 评估入口同映射
     path2 = REPO / "scripts" / "结果分析" / "evaluate_trajimpute_direct.py"
