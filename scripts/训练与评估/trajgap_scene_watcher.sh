@@ -13,7 +13,7 @@ while true; do
         exit 0
     fi
     # 双臂都结束却无新结果（异常路径）也退出上报
-    if grep -q "ARM_DONE gpu3" $PLAN/chain_gpu3.log 2>/dev/null \
+    if grep -q "ARM_DONE gpu1" $PLAN/chain_gpu1.log 2>/dev/null \
        && grep -q "ARM_DONE gpu2" $PLAN/chain_gpu2.log 2>/dev/null; then
         echo "ALL_ARMS_DONE_NO_NEW_RESULTS (baseline=$BASE now=$N)"
         exit 1

@@ -1,0 +1,151 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" agent="DeMo architecture figure generator" version="24.7.17" type="device">
+  <diagram id="demo-encoder-framework" name="Encoder Framework">
+    <mxGraphModel dx="1820" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1820" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="input_panel" value="ACTOR INPUTS" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#EAF2F8;strokeColor=#9DB8CC;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="30" y="140" width="360" height="650" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_panel" value="SHARED ACTOR-WISE ENCODER" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#EEF4FA;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="420" y="140" width="850" height="650" as="geometry" />
+        </mxCell>
+        <mxCell id="scene_panel" value="SCENE CONTEXT ENCODER" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#F1EDF8;strokeColor=#AD9BC8;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=15;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="140" width="490" height="650" as="geometry" />
+        </mxCell>
+        <mxCell id="e_history_motion" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="histories" target="motion_features">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_motion_projection" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="motion_features" target="history_projection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_projection_mamba" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="history_projection" target="temporal_mamba">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mamba_last_state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="temporal_mamba" target="last_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_last_state_fusion" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" edge="1" parent="1" source="last_state" target="actor_fusion">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1090" y="505" />
+              <mxPoint x="1000" y="505" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_metadata_type" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" parent="1" source="metadata" target="type_embedding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="405" y="575" />
+              <mxPoint x="405" y="554" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_metadata_position" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.75;entryX=0;entryY=0.5;" edge="1" parent="1" source="metadata" target="position_embedding">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="405" y="620" />
+              <mxPoint x="405" y="649" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_type_fusion" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.3;" edge="1" parent="1" source="type_embedding" target="actor_fusion">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="735" y="554" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_position_fusion" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.8;" edge="1" parent="1" source="position_embedding" target="actor_fusion">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="735" y="649" />
+              <mxPoint x="735" y="618" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_fusion_scene" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#536878;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.65;" edge="1" parent="1" source="actor_fusion" target="scene_transformer">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1190" y="591" />
+              <mxPoint x="1190" y="446" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_mask_scene" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#AD9BC8;strokeWidth=1.6;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="actor_mask" target="scene_transformer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_transformer_norm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#AD9BC8;strokeWidth=1.6;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="scene_transformer" target="scene_norm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_norm_output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#AD9BC8;strokeWidth=1.6;endArrow=block;endFill=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="scene_norm" target="scene_features">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_validity_mask" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#AD9BC8;strokeWidth=1.6;endArrow=block;endFill=1;exitX=1;exitY=0.15;entryX=0.5;entryY=0;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="histories" target="actor_mask">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="380" y="267" />
+              <mxPoint x="380" y="195" />
+              <mxPoint x="1545" y="195" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="histories" value="Per-actor histories + validity masks&lt;br&gt;Focal actor + neighboring actors" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#EAF2F8;strokeColor=#9DB8CC;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="70" y="250" width="290" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="metadata" value="Actor metadata&lt;br&gt;Center position · heading · actor type" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9DB8CC;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=0;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="70" y="545" width="290" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="motion_features" value="Motion feature construction&lt;br&gt;Relative displacement · velocity change" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="250" width="210" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="history_projection" value="History feature&lt;br&gt;projection (MLP)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="720" y="250" width="190" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="temporal_mamba" value="Temporal sequence encoder&lt;br&gt;Mamba" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#EEF4FA;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="960" y="250" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="last_state" value="Last valid state selection" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="960" y="385" width="260" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="type_embedding" value="Actor-type embedding" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="520" width="210" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="position_embedding" value="Position &amp; heading&lt;br&gt;projection (MLP)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="615" width="210" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_fusion" value="Actor representation fusion&lt;br&gt;Addition of temporal and context features" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#EEF4FA;strokeColor=#91ACCA;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="790" y="545" width="300" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_mask" value="Actor validity mask" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AD9BC8;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=12;fontStyle=0;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="245" width="350" height="58" as="geometry" />
+        </mxCell>
+        <mxCell id="scene_transformer" value="Scene interaction&lt;br&gt;Transformer self-attention" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#F1EDF8;strokeColor=#AD9BC8;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=14;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="375" width="350" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="scene_norm" value="Layer normalization" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AD9BC8;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="535" width="350" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="scene_features" value="Contextualized actor representations" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AD9BC8;strokeWidth=1.3;fontColor=#263746;fontFamily=Arial;fontSize=13;fontStyle=1;align=center;verticalAlign=middle;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="650" width="350" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="DeMo Encoder Framework" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontColor=#263746;fontFamily=Arial;fontSize=24;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="34" y="25" width="1200" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Actor-wise temporal encoding followed by scene-level interaction" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontColor=#657786;fontFamily=Arial;fontSize=13;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="36" y="73" width="1300" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_note" value="Shared temporal encoder applied independently across actors" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontColor=#657786;fontFamily=Arial;fontSize=11;fontStyle=2;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="920" y="200" width="340" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Solid arrows: feature flow   ·   Dashed arrows: validity-mask control" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontColor=#657786;fontFamily=Arial;fontSize=11;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="36" y="830" width="1000" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="scope_note" value="Map-free actor-only encoder" style="text;html=1;strokeColor=none;fillColor=none;whiteSpace=wrap;fontColor=#657786;fontFamily=Arial;fontSize=11;align=right;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="830" width="460" height="25" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
